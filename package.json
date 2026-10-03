@@ -1,0 +1,6 @@
+{
+  "name": "syre-banks-fitness", "private": true, "version": "0.1.0",
+  "workspaces": ["apps/web", "packages/*"],
+  "scripts": {"dev": "npm run dev --workspace @syre/web", "build": "npm run build --workspace @syre/web", "typecheck": "npm run typecheck --workspace @syre/web", "lint": "npm run lint --workspace @syre/web", "test": "npm run test --workspace @syre/web"},
+  "engines": {"node": ">=22.12"}
+}

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.env
+*.db
+*.db-shm
+*.db-wal
+coverage/
+test-results/
+playwright-report/
+.sites-runtime/
+.local-media/
