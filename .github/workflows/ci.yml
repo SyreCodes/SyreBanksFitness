@@ -1,23 +1,40 @@
 name: Quality gates
-on: [push, pull_request]
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
 jobs:
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: npm }
+        with:
+          node-version: '22'
+          cache: npm
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
   api:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17-alpine
-        env: { POSTGRES_DB: fitness, POSTGRES_USER: fitness, POSTGRES_PASSWORD: ci-test-only }
+        env:
+          POSTGRES_DB: fitness
+          POSTGRES_USER: fitness
+          POSTGRES_PASSWORD: ci-test-only
         ports: ['5432:5432']
         options: --health-cmd "pg_isready -U fitness" --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
@@ -30,7 +47,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
+        with:
+          python-version: '3.12'
       - run: pip install -e 'apps/api[dev]'
       - run: ruff check apps/api
       - run: mypy app
@@ -39,3 +57,101 @@ jobs:
         working-directory: apps/api
       - run: pytest
         working-directory: apps/api
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: fitness
+          POSTGRES_USER: fitness
+          POSTGRES_PASSWORD: ci-test-only
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U fitness" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+psycopg://fitness:ci-test-only@localhost:5432/fitness
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-only-browser-secret-not-used-in-any-deployment
+      SEED_ADMIN_PASSWORD: ci-only-admin-password-for-browser-tests
+      SEED_CLIENT_PASSWORD: ci-only-client-password-for-browser-tests
+      STORAGE_PROVIDER: local
+      MEDIA_ROOT: ${{ runner.temp }}/sbf-e2e-media
+      VITE_DEMO_MODE: 'true'
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: pip install -e 'apps/api[dev]'
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Migrate and seed disposable database
+        working-directory: apps/api
+        run: |
+          alembic upgrade head
+          python -m app.seed
+      - name: Start API and web
+        run: |
+          cd apps/api
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/sbf-api.log" 2>&1 &
+          cd ../web
+          npm run dev -- --host 127.0.0.1 > "$RUNNER_TEMP/sbf-web.log" 2>&1 &
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8000/ready > /dev/null && curl --fail --silent http://127.0.0.1:5173/ > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/sbf-api.log" "$RUNNER_TEMP/sbf-web.log"
+          exit 1
+      - name: Browser acceptance tests
+        working-directory: apps/web
+        run: npm run test:e2e
+      - name: Show server logs on failure
+        if: failure()
+        run: |
+          if [ -f "$RUNNER_TEMP/sbf-api.log" ]; then cat "$RUNNER_TEMP/sbf-api.log"; fi
+          if [ -f "$RUNNER_TEMP/sbf-web.log" ]; then cat "$RUNNER_TEMP/sbf-web.log"; fi
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-artifacts
+          path: apps/web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  production-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --file Dockerfile.prod --tag syre-banks-fitness:ci .
+      - name: Smoke production image
+        run: |
+          docker run --detach --rm --name sbf-image-smoke \
+            --publish 127.0.0.1:18000:10000 \
+            --env DATABASE_URL=sqlite:////tmp/fitness-ci.db \
+            syre-banks-fitness:ci
+          trap 'docker logs sbf-image-smoke; docker rm --force sbf-image-smoke > /dev/null 2>&1 || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18000/ready > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent --show-error http://127.0.0.1:18000/ready > /dev/null
+          curl --fail --silent --show-error http://127.0.0.1:18000/login | grep --quiet 'id="root"'

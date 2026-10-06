@@ -9,3 +9,27 @@
 @media(max-width:900px){.app-layout{grid-template-columns:1fr}.sidebar{display:none;position:fixed;left:0;width:238px;box-shadow:20px 0 70px #0002}.sidebar.mobile-open{display:flex}.sidebar-overlay{position:fixed;inset:0;background:#0004;z-index:29}.mobile-menu{display:grid}.topbar{height:70px;padding:0 20px}.breadcrumb{flex:1}.global-search{width:210px}.workspace-main{padding:25px 20px}.dashboard-grid{grid-template-columns:1fr}.dashboard-three{grid-template-columns:1fr 1fr}.page-header h1{font-size:1.8rem}.metric-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.workspace-main{padding:23px 16px}.topbar{padding:0 16px;gap:10px}.topbar-right{gap:9px}.global-search{display:none}.breadcrumb span:first-child{display:none}.breadcrumb{font-size:.75rem}.page-header{align-items:flex-start;flex-wrap:wrap;gap:15px}.page-actions{flex-wrap:wrap}.page-header h1{font-size:1.7rem}.page-header>div>p:not(.eyebrow){font-size:.8125rem}.metric-card{padding:15px}.metric-value{font-size:1.6rem}.metric-top{font-size:.6875rem}.metric-bottom{font-size:.6rem;flex-wrap:wrap}.metric-grid{gap:10px}.dashboard-three,.two-column,.resource-grid{grid-template-columns:1fr}.dashboard-three>:last-child{grid-column:auto}.filter-bar{flex-wrap:wrap}.search-input{max-width:none;flex-basis:100%}.form-row{grid-template-columns:1fr;gap:0}.card{padding:19px}.table-card{padding:0}.button{padding:10px 14px}.table-wrap{margin:0}.data-table th,.data-table td{padding:12px}.tabs{gap:18px}.modal{padding:22px}.topbar .avatar{display:none}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+.sidebar-section-label,.eyebrow{font-size:.75rem;color:#707a62}.metric-top{font-size:.8125rem;color:#657052}.metric-bottom,.priority-text small,.session-info small,.activity-text small,.table-footer,.name-cell small,.coaching-stat,.quick-actions a,.topbar-date{font-size:.75rem!important;color:#6d785b}.data-table{font-size:.875rem}.data-table th{font-size:.75rem;color:#657052}.badge{font-size:.75rem}.nav-item{font-size:.875rem}.profile-info small,.breadcrumb{font-size:.75rem}.text-link{font-size:.8125rem;color:#5c7233}.priority-text strong,.session-info strong,.activity-text{font-size:.875rem}.name-cell strong{font-size:.875rem}.metric-grid .metric-card{min-height:151px}
+
+.sidebar{overflow-y:auto;scrollbar-width:thin}.sidebar-brand{flex-shrink:0}.sidebar-bottom{padding-top:18px}
+.notification-item{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:9px;background:#fff;padding:13px 15px;color:var(--ink);cursor:pointer}
+.notification-item.unread{border-color:#d5e4aa;background:#f7faed}
+.notification-item:hover{border-color:#a7be67}
+.notification-item p{font-size:.8rem;margin:5px 0}
+.notification-item small{font-size:.7rem}
+
+.exercise-video-panel{border:1px solid var(--line);background:#fafbf7;border-radius:12px;padding:18px;margin:8px 0 18px}
+.exercise-video-panel h3{margin-bottom:16px}
+.exercise-video-current,.exercise-video-selected{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-bottom:18px;font-size:.875rem}
+.exercise-video-current video,.exercise-video-selected video{width:100%;max-height:230px;object-fit:contain;border-radius:8px;background:#20251e}
+.exercise-video-selected{padding:12px;border:1px solid #dce5ca;border-radius:9px;background:white}
+.exercise-video-selected span{font-size:.75rem;color:var(--muted)}
+.video-upload-status{padding:12px;border:1px solid #dce5ca;border-radius:9px;background:white;margin:12px 0}
+.video-upload-status p{font-size:.875rem;margin-bottom:8px}
+.video-upload-status progress{display:block;width:100%;height:12px;accent-color:#9ebc46}
+.video-upload-status .button{margin-top:12px}
+.exercise-video-panel .form-error p{margin-bottom:10px}
+.checkbox-row{display:flex;gap:9px;align-items:center;font-size:.875rem;font-weight:600}
+.checkbox-row input{width:18px;height:18px;accent-color:#7e9d24}
+.form-grid-two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:560px){.form-grid-two{grid-template-columns:1fr;gap:0}.exercise-video-panel{padding:14px}}

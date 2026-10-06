@@ -15,3 +15,7 @@ test-results/
 playwright-report/
 .sites-runtime/
 .local-media/
+
+*.tsbuildinfo
+*.egg-info/
+apps/api/private-media/

@@ -1,0 +1,31 @@
+export type Client = { id: string; name: string; email: string; role: string; status: string; goal?: string; assigned_coach_id?: string | null; joined_at?: string; adherence?: number; attention_status?: string; attention_reasons?: string[]; profile?: Record<string, unknown> };
+export type Lead = { id: string; name: string; email: string; phone?: string; goal: string; stage: string; source?: string; responses?: Record<string, unknown>; notes?: string; assigned_coach_id?: string | null; next_follow_up?: string | null; created_at?: string };
+export type Exercise = { id: string; name: string; description?: string; muscle_group?: string; primary_muscle?: string; equipment?: string; difficulty?: string; instructions?: string[] | string; coach_cues?: string[] | string; media_url?: string | null; video_url?: string | null; video_media_id?: string | null; thumbnail_url?: string; published?: boolean; tags?: string[] };
+export type Prescription = { exercise_id?: string; name: string; sets: number; reps: string; rest_seconds: number; notes?: string };
+export type Workout = { id?: string; name: string; day: number; exercises: Prescription[] };
+export type Program = { id: string; name: string; description: string; goal: string; difficulty: string; weeks: number; workouts: Workout[]; assigned_count?: number; cover_image?: string };
+export type Checkin = { id: string; client_id: string; client_name?: string; weight?: number; energy?: number; sleep?: number; stress?: number; wins?: string; challenges?: string; questions?: string; status: string; coach_feedback?: string; created_at: string; answers?: Record<string, unknown> };
+export type Message = { id: string; sender_id: string; recipient_id: string; sender_name?: string; body: string; created_at: string; read?: boolean };
+export type Booking = { id: string; client_id: string; client_name?: string; coach_id: string; starts_at: string; ends_at: string; type?: string; session_type?: string; status: string; meeting_url?: string };
+export type Product = { id: string; name: string; description: string; price: number; amount_minor?: number; currency: string; billing_interval: string; features: string[]; entitlements: Record<string, boolean | number>; active?: boolean };
+export type Audit = { id: string; action: string; actor_id?: string; actor_name?: string; resource_type?: string; resource_id?: string; created_at: string; request_id?: string; details?: { previous_role?: string; new_role?: string; previous_active?: boolean; new_active?: boolean } };
+export type AdminUser = { id: string; name: string; email: string; role: 'SUPER_ADMIN' | 'ADMIN' | 'COACH' | 'CLIENT' | 'LEAD'; active: boolean; email_verified: boolean; status: string; assigned_coach_id?: string | null; created_at: string; updated_at: string };
+export type Dashboard = {
+  metrics: {
+    total_clients: number; active_clients: number; new_leads: number; monthly_revenue: number;
+    revenue_currency: string; checkins_pending: number; formchecks_pending: number; unread_messages: number;
+    failed_payments: number; active_subscriptions: number; lead_conversion: number;
+    annualized_recurring_revenue_minor: number | null; upcoming_sessions: number;
+    workout_adherence: number; clients_needing_attention: number;
+  };
+  priority_actions: { key: string; label: string; count: number; href: string }[];
+  attention: { client_id: string; name: string; reason: string; status: string }[];
+  revenue_trend: { month: string; revenue: number }[];
+  revenue_by_currency_minor: Record<string, number>;
+  lead_funnel: { stage: string; count: number }[];
+  new_clients_trend: { month: string; count: number }[];
+  subscription_status: { status: string; count: number }[];
+  activity: { id: string; action: string; label: string; created_at: string }[];
+  sessions: Booking[];
+  recent_clients: Client[];
+};

@@ -4,6 +4,7 @@ from sqlalchemy import Select, func, inspect, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError
+from app.core.logging import request_id_context
 from app.modules.admin.models import AuditLog
 
 
@@ -24,9 +25,10 @@ def paginate(db: Session, statement: Select, limit: int = 50, offset: int = 0) -
     return {"items": [serialize(record) for record in records], "total": total}
 
 
-def audit(db: Session, actor_id: str | None, action: str, resource: Any) -> None:
+def audit(db: Session, actor_id: str | None, action: str, resource: Any, details: dict[str, Any] | None = None) -> None:
     db.flush()
-    db.add(AuditLog(actor_id=actor_id, action=action, resource_type=type(resource).__name__, resource_id=resource.id))
+    db.add(AuditLog(request_id=request_id_context.get(), actor_id=actor_id, action=action,
+                    resource_type=type(resource).__name__, resource_id=resource.id, details=details or {}))
 
 
 def persist(db: Session, record: Any, actor_id: str | None, action: str) -> dict[str, Any]:

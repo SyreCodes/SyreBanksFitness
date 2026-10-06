@@ -9,21 +9,23 @@ logger = logging.getLogger("sbf.errors")
 
 
 class AppError(Exception):
-    def __init__(self, status: int, code: str, message: str):
+    def __init__(self, status: int, code: str, message: str, details: dict | None = None):
         self.status = status
         self.code = code
         self.message = message
+        self.details = details or {}
 
 
 def install_errors(app: FastAPI) -> None:
-    def response(request: Request, status: int, code: str, message: str) -> JSONResponse:
+    def response(request: Request, status: int, code: str, message: str, details: dict | None = None) -> JSONResponse:
         return JSONResponse(status_code=status, content={
-            "error": {"code": code, "message": message, "request_id": getattr(request.state, "request_id", None)}
+            "error": {"code": code, "message": message, "details": details or {},
+                      "request_id": getattr(request.state, "request_id", None)}
         })
 
     @app.exception_handler(AppError)
     async def app_error(request: Request, error: AppError) -> JSONResponse:
-        return response(request, error.status, error.code, error.message)
+        return response(request, error.status, error.code, error.message, error.details)
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException) -> JSONResponse:

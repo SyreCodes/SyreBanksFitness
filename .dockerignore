@@ -1,5 +1,6 @@
 .git
 .env
+.env.*
 .venv
 node_modules
 **/node_modules
@@ -11,3 +12,11 @@ node_modules
 **/.mypy_cache
 .local-media
 apps/api/private-media
+.gitignore
+.github
+docs
+playwright-report
+test-results
+**/.coverage
+**/.next
+**/.turbo
