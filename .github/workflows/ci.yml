@@ -81,7 +81,7 @@ jobs:
       SEED_ADMIN_PASSWORD: ci-only-admin-password-for-browser-tests
       SEED_CLIENT_PASSWORD: ci-only-client-password-for-browser-tests
       STORAGE_PROVIDER: local
-      MEDIA_ROOT: ${{ runner.temp }}/sbf-e2e-media
+      MEDIA_ROOT: /tmp/sbf-e2e-media
       VITE_DEMO_MODE: 'true'
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:5173
     steps:
