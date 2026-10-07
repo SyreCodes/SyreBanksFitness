@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,9 +23,14 @@ def db() -> Generator[Session, None, None]:
 
 
 @pytest.fixture
-def client(db: Session) -> Generator[TestClient, None, None]:
+def client(db: Session, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_db] = lambda: db
+    # Each test uses real Redis when available, without inheriting another test's rate window.
+    monkeypatch.setattr(limiter, "key_prefix", f"sbf:rate:test:{uuid4().hex}:")
     limiter.local.clear()
+    limiter.redis_unavailable_until = 0.0
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
+    limiter.local.clear()
+    limiter.redis_unavailable_until = 0.0

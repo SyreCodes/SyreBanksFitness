@@ -17,12 +17,13 @@ class RateLimiter:
     def __init__(self) -> None:
         self.settings = get_settings()
         self.redis = Redis.from_url(self.settings.redis_url, socket_connect_timeout=0.2, socket_timeout=0.2, retry=Retry(NoBackoff(), 0))
+        self.key_prefix = "sbf:rate:"
         self.local: dict[str, tuple[int, float]] = defaultdict(lambda: (0, 0.0))
         self.lock = Lock()
         self.redis_unavailable_until = 0.0
 
     def check(self, key: str, limit: int = 10, seconds: int = 60) -> None:
-        safe_key = "sbf:rate:" + hashlib.sha256(key.encode()).hexdigest()
+        safe_key = self.key_prefix + hashlib.sha256(key.encode()).hexdigest()
         try:
             if not self.settings.production and time.monotonic() < self.redis_unavailable_until:
                 raise RedisError("Development Redis circuit is temporarily open")
