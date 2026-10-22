@@ -3,20 +3,18 @@ import time
 from collections import defaultdict
 from threading import Lock
 
-from redis import Redis
-from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
-from redis.retry import Retry
 
 from app.core.config import get_settings
 from app.core.exceptions import AppError
+from app.core.redis_connection import redis_client
 
 
 class RateLimiter:
     """Redis fixed windows; explicitly local process fallback only during development/tests."""
     def __init__(self) -> None:
         self.settings = get_settings()
-        self.redis = Redis.from_url(self.settings.redis_url, socket_connect_timeout=0.2, socket_timeout=0.2, retry=Retry(NoBackoff(), 0))
+        self.redis = redis_client(self.settings.redis_url, production=self.settings.production)
         self.key_prefix = "sbf:rate:"
         self.local: dict[str, tuple[int, float]] = defaultdict(lambda: (0, 0.0))
         self.lock = Lock()

@@ -1,5 +1,5 @@
 import jwt
-from fastapi import APIRouter, File, Form, Query, UploadFile
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 
@@ -12,6 +12,7 @@ from app.modules.cms.models import BlogPost, MediaAsset
 from app.modules.cms.schemas import BlogInput, MediaPatch, SettingsPatch
 from app.modules.cms.services import CMSService
 from app.modules.coaching.models import Exercise
+from app.providers.azure_storage import AzureBlobStorage
 from app.providers.storage import LocalStorage, storage_provider
 
 router = APIRouter(tags=["Content and media"])
@@ -83,8 +84,8 @@ def archive(media_id: str, db: DB, user: Identity):
     return CMSService(db).edit_media(media_id, None, True, user)
 
 
-@router.get("/media/{media_id}/file")
-def file_download(media_id: str, db: DB, user: OptionalIdentity, token: str | None = None):
+@router.api_route("/media/{media_id}/file", methods=["GET", "HEAD"])
+def file_download(media_id: str, db: DB, user: OptionalIdentity, request: Request, token: str | None = None):
     asset = require_record(db, MediaAsset, media_id)
     if asset.purpose == "archived":
         raise AppError(404, "MEDIA_NOT_FOUND", "Media is no longer available")
@@ -103,6 +104,9 @@ def file_download(media_id: str, db: DB, user: OptionalIdentity, token: str | No
             raise AppError(401, "PRIVATE_MEDIA", "Please sign in to access private media")
         CMSService(db).authorize_asset(asset, user)
     provider = storage_provider()
+    if isinstance(provider, AzureBlobStorage):
+        return provider.response(asset.storage_key, asset.content_type, method=request.method,
+                                 range_header=request.headers.get("range"), if_range=request.headers.get("if-range"))
     if isinstance(provider, LocalStorage):
         return FileResponse(provider.path(asset.storage_key), media_type=asset.content_type, headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"})
     url = provider.signed_url(asset.storage_key)

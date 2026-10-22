@@ -8,6 +8,7 @@ import boto3
 
 from app.core.config import get_settings
 from app.core.exceptions import AppError
+from app.providers.azure_storage import azure_storage
 
 
 class StorageProvider(Protocol):
@@ -88,4 +89,8 @@ class S3Storage:
 
 
 def storage_provider() -> StorageProvider:
-    return S3Storage() if get_settings().storage_provider == "s3" else LocalStorage()
+    settings = get_settings()
+    if settings.storage_provider == "azure":
+        return azure_storage(settings.azure_storage_account_url, settings.azure_storage_container,
+                             settings.azure_managed_identity_client_id)
+    return S3Storage() if settings.storage_provider == "s3" else LocalStorage()

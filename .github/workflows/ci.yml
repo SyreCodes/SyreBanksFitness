@@ -50,7 +50,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -e 'apps/api[dev]'
-      - run: ruff check apps/api
+      - name: Test Azure release failure handling
+        run: python -m unittest discover -s scripts/azure/tests -v
+      - run: ruff check apps/api scripts/azure
       - run: mypy app
         working-directory: apps/api
       - run: alembic upgrade head
@@ -155,3 +157,24 @@ jobs:
           done
           curl --fail --silent --show-error http://127.0.0.1:18000/ready > /dev/null
           curl --fail --silent --show-error http://127.0.0.1:18000/login | grep --quiet 'id="root"'
+
+      - name: Save tested production image
+        if: github.event_name == 'push' && vars.AZURE_DEPLOY_ENABLED == 'true'
+        run: docker save syre-banks-fitness:ci | gzip > "$RUNNER_TEMP/production-image.tar.gz"
+      - name: Upload tested production image
+        if: github.event_name == 'push' && vars.AZURE_DEPLOY_ENABLED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-image-${{ github.sha }}
+          path: ${{ runner.temp }}/production-image.tar.gz
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+
+  deploy:
+    needs: [web, api, browser, production-image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AZURE_DEPLOY_ENABLED == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/azure-release.yml

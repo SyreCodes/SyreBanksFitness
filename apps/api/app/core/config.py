@@ -1,5 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlsplit
+from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,12 +31,34 @@ class Settings(BaseSettings):
     public_web_url: str = "http://localhost:5173"
     flutterwave_secret_key: str = ""
     flutterwave_webhook_secret: str = ""
-    storage_provider: str = "local"
+    storage_provider: Literal["local", "s3", "azure"] = "local"
     s3_endpoint_url: str = ""
     s3_bucket: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_region: str = "us-east-1"
+    azure_storage_account_url: str = ""
+    azure_storage_container: str = ""
+    azure_managed_identity_client_id: str = ""
+
+    @model_validator(mode="after")
+    def require_azure_storage_configuration(self) -> "Settings":
+        if self.storage_provider != "azure":
+            return self
+        endpoint = urlsplit(self.azure_storage_account_url)
+        if (endpoint.scheme != "https" or not endpoint.hostname
+                or not endpoint.hostname.endswith(".blob.core.windows.net")
+                or endpoint.username or endpoint.password or endpoint.port
+                or endpoint.path not in {"", "/"} or endpoint.query or endpoint.fragment):
+            raise ValueError("Azure storage requires an HTTPS account URL without credentials or a path")
+        name = self.azure_storage_container
+        if (not 3 <= len(name) <= 63 or not name[0].isalnum() or not name[-1].isalnum()
+                or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-" for char in name)
+                or "--" in name):
+            raise ValueError("Azure storage requires a valid container name")
+        if self.azure_managed_identity_client_id:
+            UUID(self.azure_managed_identity_client_id)
+        return self
 
     @field_validator("database_url")
     @classmethod
@@ -69,10 +94,10 @@ class Settings(BaseSettings):
                 raise ValueError("Production PUBLIC_WEB_URL must use HTTPS")
             if self.public_web_url.rstrip("/") not in self.origins:
                 raise ValueError("Production ALLOWED_ORIGINS must include PUBLIC_WEB_URL")
-            if self.storage_provider != "s3":
-                raise ValueError("Production requires durable S3-compatible storage")
-            if not all((self.s3_endpoint_url.startswith("https://"), self.s3_bucket,
-                        self.s3_access_key, self.s3_secret_key)):
+            if self.storage_provider not in {"s3", "azure"}:
+                raise ValueError("Production requires durable S3-compatible storage or Azure Blob storage")
+            if self.storage_provider == "s3" and not all((self.s3_endpoint_url.startswith("https://"), self.s3_bucket,
+                                                        self.s3_access_key, self.s3_secret_key)):
                 raise ValueError("Production requires an HTTPS S3 endpoint, bucket, and credentials")
         return self
 

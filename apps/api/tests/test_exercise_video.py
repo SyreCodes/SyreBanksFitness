@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import SpooledTemporaryFile
 
 import pytest
-from fastapi import UploadFile
+from fastapi import Request, UploadFile
 from sqlalchemy import select
 from starlette.datastructures import Headers
 
@@ -73,13 +73,13 @@ def test_service_video_lifecycle_and_permissions(db, actors):
     assert "?token=" in private["video_url"]
     assert (root / asset.storage_key).read_bytes() == MP4
     with pytest.raises(AppError) as forbidden:
-        file_download(asset.id, db, None)
+        file_download(asset.id, db, None, Request({"type": "http", "method": "GET", "headers": []}))
     assert forbidden.value.status == 401
 
     published = service.patch_exercise(record["id"], ExerciseCreate(name="Squat", muscle_group="Legs"), users["owner"])
     assert published["video_url"] == f"/api/v1/media/{asset.id}/file"
     assert asset.public is True
-    assert file_download(asset.id, db, None).path == root / asset.storage_key
+    assert file_download(asset.id, db, None, Request({"type": "http", "method": "GET", "headers": []})).path == root / asset.storage_key
 
     replaced = asyncio.run(service.upload_exercise_video(record["id"], in_memory_upload(MP4 + b"new"), users["owner"]))
     assert replaced["video_media_id"] != asset.id and asset.purpose == "archived"

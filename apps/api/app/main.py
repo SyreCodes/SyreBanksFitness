@@ -3,13 +3,17 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from sqlalchemy import text
+from redis.exceptions import RedisError
+from sqlalchemy import select, text
 
 from app.core.config import get_settings
 from app.core.database import engine
 from app.core.exceptions import AppError, install_errors
 from app.core.logging import configure_logging, install_request_logging
+from app.core.ratelimit import limiter
+from app.modules.admin.models import AuditLog
 from app.modules.admin.routes import router as admin_router
+from app.modules.auth.models import RefreshSession, User
 from app.modules.auth.routes import router as auth_router
 from app.modules.clients.routes import router as clients_router
 from app.modules.cms.routes import router as cms_router
@@ -25,7 +29,7 @@ configure_logging()
 settings = get_settings()
 app = FastAPI(title="Syre Banks Fitness API", version="0.1.0", description="Versioned fitness coaching API. Bearer authentication and server-side ownership permissions.")
 app.add_middleware(CORSMiddleware, allow_origins=settings.origins, allow_credentials=True,
-                   allow_methods=["GET", "POST", "PATCH", "DELETE"],
+                   allow_methods=["GET", "HEAD", "POST", "PATCH", "DELETE"],
                    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "Idempotency-Key"],
                    expose_headers=["X-Request-ID"])
 install_errors(app)
@@ -42,11 +46,24 @@ def ready() -> dict[str, str]:
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
+            if settings.production:
+                # Confirm login's required columns exist, without requiring an
+                # exact migration revision during compatible rolling releases.
+                for model in (User, RefreshSession, AuditLog):
+                    connection.execute(select(model).limit(0))
     except Exception as exc:
         raise AppError(503, "DATABASE_UNAVAILABLE", "Database is not available") from exc
     if settings.web_dist_dir and not (settings.web_dist_dir / "index.html").is_file():
         raise AppError(503, "WEB_UNAVAILABLE", "Web application is not available")
-    return {"status": "ready", "database": "connected"}
+    result = {"status": "ready", "database": "connected"}
+    if settings.production:
+        try:
+            if not limiter.redis.ping():
+                raise RedisError("Redis did not respond")
+        except RedisError as exc:
+            raise AppError(503, "REDIS_UNAVAILABLE", "Authentication service is not available") from exc
+        result["redis"] = "connected"
+    return result
 
 
 app.include_router(auth_router, prefix="/api/v1")
