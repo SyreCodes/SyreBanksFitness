@@ -1,6 +1,6 @@
 # Azure deployment and handoff
 
-Status: preparation in progress; **the application is not live**. No database, Redis instance, application, worker, migration job, or scheduled outbox job has been verified as deployed. GitHub automatic release remains disabled. This document records progress for resuming safely; it is not evidence that unexecuted steps succeeded.
+Status: preparation in progress; **the application is not live**. No database, application, worker, migration job, or scheduled outbox job has been verified as deployed. Redis cluster creation was submitted, but its database creation returned “cluster is not yet running”; inspect the cluster before retrying only the missing database. GitHub automatic release remains disabled. This document records progress for resuming safely; it is not evidence that unexecuted steps succeeded.
 
 ## Confirmed resources
 
@@ -16,20 +16,20 @@ Subscription `686467b0-6295-4d5d-8fb6-d06fd003bde3`, tenant `53e15a06-0e85-4291-
 | Storage `stsyrebanks686467b0` | Public network disabled by policy; anonymous and shared-key access disabled; private container `syrebanks-media`; 14-day soft delete |
 | Vault `kv-syrebanks-686467b0` | Public network disabled by governance, RBAC and purge protection enabled |
 | Vault private endpoint `pe-syrebanks-keyvault` | Approved; DNS zone link `link-syrebanks-keyvault` completed and DNS zone group `default` succeeded |
-| Blob private endpoint `pe-syrebanks-blob` | Approved and succeeded; Blob private DNS setup remains to be completed |
+| Blob private endpoint `pe-syrebanks-blob` | Approved and succeeded; private DNS zone, VNet link and endpoint zone group completed |
 | PostgreSQL private DNS | `syrebanks.private.postgres.database.azure.com` linked to VNet |
 
 Do not enable public Key Vault/storage access to work around governance. Cloud Shell outside the VNet cannot access private secrets or media. Use a temporary Container Apps job inside this environment to test private DNS, authenticate with a managed identity, and bootstrap secrets without printing them. Do not assume that the earlier `postgres-admin-password` write succeeded; distinguish SecretNotFound from a network/permission error before generating anything.
 
-## Decisions still required
+## Approved sizing and remaining decisions
 
-The preliminary managed-service estimate is roughly USD 200–240/month before tax, heavy video transfer, or unexpected logging, using a small PostgreSQL server and highly available Managed Redis. This is a planning estimate, not an Azure quote or hard cap. The user has not approved a monthly budget. Confirm sizing/costs before provisioning database/cache. The portal's subscription total includes other projects and is not a credit balance. ACR Premium is not needed for the currently confirmed public registry endpoint.
+The preliminary managed-service estimate is roughly USD 200–240/month before tax, heavy video transfer, or unexpected logging, using a small PostgreSQL server and highly available Managed Redis. This is a planning estimate, not an Azure quote or hard cap. The user approved proceeding with the USD 200–240/month setup. Planned sizes: PostgreSQL 17 Standard_B1ms (Burstable), 32 GiB, seven-day backups; Managed Redis Balanced_B0 with high availability, NoCluster, TLS and NoEviction. Keep work within this envelope; these are not spending caps. The portal's subscription total includes other projects and is not a credit balance. ACR Premium is not needed for the currently confirmed public registry endpoint.
 
 Select and verify a production email sender. The code requires STARTTLS SMTP with a valid certificate. A configured sender and real delivery test are prerequisites for registration/password reset; an empty SMTP configuration does not constitute a working production email service. Do not use the example Gmail address as an assumed authorized sender.
 
 ## Resume in Bash Cloud Shell
 
-These initial commands inspect existing resources and complete Blob DNS. Run one command/block at a time and check the result. They contain resource identifiers only, no passwords.
+These initial commands inspect existing resources. Blob DNS creation is already complete; the conditional repair commands below are for recovery only. Run one command/block at a time and check the result. They contain resource identifiers only, no passwords.
 
 ```bash
 az account set --subscription 686467b0-6295-4d5d-8fb6-d06fd003bde3
@@ -69,7 +69,35 @@ az network private-endpoint dns-zone-group create -g rg-syrebanks-prod --endpoin
 az network private-dns record-set a list -g rg-syrebanks-prod -z privatelink.blob.core.windows.net --query '[].{Name:name,Addresses:aRecords[].ipv4Address}' -o json
 ```
 
-After DNS, the remaining bootstrap commands depend on the approved database/cache sizes and email sender. Do not substitute guesses. The order is: private connectivity test; isolated bootstrap identity; secret creation/reuse; private PostgreSQL and database; compatible non-clustered TLS Redis; least-privilege app DB account; runtime secrets; image build; migration; API/worker/outbox provisioning; admin creation; hosted acceptance; OIDC setup and enable automatic releases. A complete executable bootstrap sequence is still pending those choices.
+Database/cache sizing is approved. After DNS, verify private connectivity and configure the production sender. The order is: private connectivity test; isolated bootstrap identity; secret creation/reuse; private PostgreSQL and database; compatible non-clustered TLS Redis; least-privilege app DB account; runtime secrets; image build; migration; API/worker/outbox provisioning; admin creation; hosted acceptance; OIDC setup and enable automatic releases. A complete executable bootstrap sequence is still being prepared; the commands below must not be treated as a finished deployment.
+
+## Latest checkpoint (2026-10-23)
+
+- GitHub main commit `7b88c274849aa3a08f04e45cb73fe900f96b5791` passed web, API, browser and production-image CI. Release was deliberately skipped until infrastructure is ready.
+- `job-syrebanks-network-check` was created. Execution `job-syrebanks-network-check-wc58yes` was started; its result still needs checking.
+- Redis cluster creation was submitted. The CLI attempted database creation before the cluster finished and returned Conflict. Do not recreate or delete the cluster; inspect it, then create only the missing default database.
+- The temporary bootstrap identity was not created: the approval reviewer reached an account usage limit before that command ran.
+- The previous `/tmp` CLI sign-in expired. Local execution now uses a private persistent configuration at `/home/syre/.local/state/syrebanks-azure-cli`; this path contains credentials and must never be committed, shared or printed. Cloud Shell uses its normal sign-in instead.
+
+Inspect the partial operations after sign-in:
+
+```bash
+az containerapp job execution show -g rg-syrebanks-prod -n job-syrebanks-network-check --job-execution-name job-syrebanks-network-check-wc58yes --query '{Name:name,Status:properties.status}' -o json
+```
+
+```bash
+az redisenterprise show -g rg-syrebanks-prod -n redis-syrebanks-prod --query '{Name:name,State:provisioningState,ResourceState:resourceState,Host:hostName,Sku:sku.name}' -o json
+```
+
+```bash
+az redisenterprise database list -g rg-syrebanks-prod --cluster-name redis-syrebanks-prod --query '[].{Name:name,State:provisioningState,Clustering:clusteringPolicy,TLS:clientProtocol}' -o json
+```
+
+Only if the cluster is running and its database list is empty:
+
+```bash
+az redisenterprise database create -g rg-syrebanks-prod --cluster-name redis-syrebanks-prod --client-protocol Encrypted --clustering-policy NoCluster --eviction-policy NoEviction --access-keys-auth Enabled --port 10000 --query '{Name:name,State:provisioningState}' -o json
+```
 
 ## Runtime configuration
 
