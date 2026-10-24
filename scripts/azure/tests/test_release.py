@@ -87,6 +87,41 @@ class ReleaseTests(unittest.TestCase):
             ('smoke', 'app.example.com')]]
         self.assertEqual(positions, sorted(positions))
 
+    def test_custom_domain_is_checked_after_promotion_before_retiring_old_revision(self):
+        release = FakeRelease()
+        release.resources['api']['properties']['template']['containers'][0]['env'] = [
+            {'name': 'PUBLIC_WEB_URL', 'value': 'https://fitness.example.com'}]
+        release.run()
+        events = release.events
+        self.assertLess(events.index(('traffic', 'api--r-test')),
+                        events.index(('smoke', 'fitness.example.com')))
+        self.assertLess(events.index(('smoke', 'fitness.example.com')),
+                        next(i for i, e in enumerate(events) if e[0] == 'az'
+                             and e[1][:3] == ('containerapp', 'revision', 'deactivate')))
+
+    def test_custom_domain_failure_restores_previous_release(self):
+        release = FakeRelease()
+        release.resources['api']['properties']['template']['containers'][0]['env'] = [
+            {'name': 'PUBLIC_WEB_URL', 'value': 'https://fitness.example.com'}]
+        release.failure = 'fitness.example.com'
+        with self.assertRaises(module.ReleaseError):
+            release.run()
+        self.assertEqual([e for e in release.events if e[0] == 'traffic'][-1], ('traffic', 'api--old'))
+        self.assertIn(('app', 'worker', OLD), release.events)
+        self.assertIn(('scheduler', OLD), release.events)
+        self.assertFalse(any(e[0] == 'az' and e[1][-1] == 'api--old' for e in release.events))
+
+    def test_invalid_public_origin_fails_before_any_mutation(self):
+        for url in ('http://fitness.example.com', 'https://user:pass@fitness.example.com',
+                    'https://fitness.example.com/path', 'https://fitness.example.com?key=hidden'):
+            with self.subTest(url=url):
+                release = FakeRelease()
+                release.resources['api']['properties']['template']['containers'][0]['env'] = [
+                    {'name': 'PUBLIC_WEB_URL', 'value': url}]
+                with self.assertRaisesRegex(module.ReleaseError, 'PUBLIC_WEB_URL'):
+                    release.run()
+                self.assertEqual(release.events, [])
+
     def test_migration_failure_never_changes_app_or_traffic(self):
         release = FakeRelease()
         release.failure = 'migrate'

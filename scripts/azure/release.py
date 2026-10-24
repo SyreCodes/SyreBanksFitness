@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -142,6 +143,16 @@ class Release:
         api_container, worker_container, migrate_container, scheduler_container = containers
         properties = api["properties"]
         ingress = properties["configuration"].get("ingress") or {}
+        public_url = next((entry.get("value") for entry in api_container.get("env", [])
+                           if entry["name"] == "PUBLIC_WEB_URL"), None)
+        public_host = ingress.get("fqdn")
+        if public_url is not None:
+            endpoint = urllib.parse.urlsplit(public_url)
+            if (endpoint.scheme != "https" or not endpoint.hostname
+                    or endpoint.username or endpoint.password or endpoint.port
+                    or endpoint.path not in {"", "/"} or endpoint.query or endpoint.fragment):
+                raise ReleaseError("PUBLIC_WEB_URL must be an HTTPS origin without credentials, port or path")
+            public_host = endpoint.hostname
         weighted = [entry for entry in ingress.get("traffic", []) if entry.get("weight", 0) > 0]
         if len(weighted) != 1 or weighted[0]["weight"] != 100 or not ingress.get("external"):
             raise ReleaseError("API must have external HTTPS ingress and one revision receiving 100% traffic")
@@ -189,6 +200,8 @@ class Release:
             self.run_job(self.scheduler, scheduler_container["name"])
             self.traffic(candidate)
             self.smoke(ingress.get("fqdn"))
+            if public_host != ingress.get("fqdn"):
+                self.smoke(public_host)
         except Exception:
             print("Release failed; restoring previous traffic and background images. Database stays upgraded.", file=sys.stderr)
             repairs = [("API traffic", lambda: self.traffic(old_revision))]
@@ -215,7 +228,7 @@ class Release:
             self.az("containerapp", "revision", "deactivate", "--name", self.api, "--revision", old_revision)
         except (ReleaseError, OSError, ValueError, KeyError, subprocess.TimeoutExpired):
             print("WARNING: release healthy, but previous API revision remains active", file=sys.stderr)
-        print(f"Released {self.image} to https://{ingress['fqdn']}", flush=True)
+        print(f"Released {self.image} to https://{public_host}", flush=True)
 
 
 def main():

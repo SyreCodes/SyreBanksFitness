@@ -6,7 +6,7 @@ See [implementation status](docs/IMPLEMENTATION_STATUS.md) for verified scope an
 
 ## GitHub publication and quality checks
 
-The app is hosted in Azure South Africa North: [open Syre Banks Fitness](https://ca-syrebanks-api.orangemeadow-cb1b109d.southafricanorth.azurecontainerapps.io). GitHub Actions checks the frontend, API, browser flows, and production image on every push and pull request to `main`. Automatic Azure releases are enabled for main commits that pass every quality gate. Check the Actions release result before treating a commit as deployed. See the [deployment guide](docs/DEPLOYMENT.md) and [Azure operational guide](docs/AZURE_DEPLOYMENT.md). Local edits alone do not deploy.
+The app is hosted in Azure South Africa North: [open Syre Banks Fitness](https://ca-syrebanks-api.orangemeadow-cb1b109d.southafricanorth.azurecontainerapps.io). GitHub Actions checks the frontend, API, browser flows, and production image on every push and pull request to `main`. Automatic Azure releases require every quality gate to pass; they are temporarily paused while Azure hosting recovers from subscription suspension. The requested public domain is https://ubuntustar.com; see the operational guide for its recovery checkpoint. Check the Actions release result before treating a commit as deployed. See the [deployment guide](docs/DEPLOYMENT.md) and [Azure operational guide](docs/AZURE_DEPLOYMENT.md). Local edits alone do not deploy.
 
 ## Requirements
 

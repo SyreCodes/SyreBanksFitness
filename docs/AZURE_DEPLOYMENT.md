@@ -1,12 +1,20 @@
 # Azure production deployment
 
-The application is hosted in **South Africa North** at:
+The application is hosted in **South Africa North**. Its generated infrastructure address is:
 
 **https://ca-syrebanks-api.orangemeadow-cb1b109d.southafricanorth.azurecontainerapps.io**
 
 On 24 October 2026, hosted checks passed for `/ready`, the login page, administrator login/profile/session refresh/logout, exercise video upload/download/seeking/access control/removal, and Celery worker processing. Production was started fresh: no local database, demo seed, clients, programs or media were imported. The only user created during setup is the owner's first super administrator. Temporary exercise/media test records were removed after verification.
 
 Email was explicitly deferred. Email verification and password-reset delivery are unavailable until SMTP is configured and tested. Registration itself can create an account without sending mail. Payment provider activation and other unfinished product features are separate from this hosting deployment.
+
+## Custom domain and current recovery checkpoint
+
+The owner requested **https://ubuntustar.com** for the entire app. The authoritative Azure DNS zone is `ubuntustar.com` in `rg-rnd-dev`; public nameservers match Azure. Its previously empty root A record now points to `4.253.14.54`, and `asuid` holds the app ownership verification value. Existing Microsoft verification records were preserved. The hostname is attached with an Azure-managed HTTPS certificate; `/ready` returned HTTP 200 and the login page rendered through this domain after certificate issuance.
+
+The API's `PUBLIC_WEB_URL` was updated to the custom origin, with both the custom and generated Azure origins allowed during transition. Before the remaining service updates and real login check could finish, the subscription entered `Warned` and Container Apps reported `ManagedClusterSuspended`. The owner reactivated it; a fresh subscription API query now reports `Enabled`, but hosting recovery is still pending. App/job `Failed` placeholders during suspension are not evidence that the database or configuration was deleted. PostgreSQL still reports `Ready`.
+
+`AZURE_DEPLOY_ENABLED=false` temporarily pauses production releases during recovery; GitHub quality checks remain enabled. Do not recreate resources or rerun bootstrap/seed. Wait for existing app/job configurations and revisions to recover, then finish the public-origin settings on API, worker, migration and outbox jobs, verify real login/refresh/logout at the custom domain, and enable releases. The custom-domain rollout and first automatic release are not yet fully verified.
 
 ## Resources and access
 
@@ -40,9 +48,11 @@ Completed, locally checked changes are committed and pushed to `origin main`. Gi
 
 The `production` environment accepts only `main`. The workflow uses GitHub OIDC with `id-syrebanks-github`; no long-lived Azure password is stored in GitHub. Its assignments are restricted to this application's registry, four app/job resources, runtime/migration identities, and Container Apps environment. Registry metadata requires Reader in addition to AcrPush.
 
-Repository variables are configured for the subscription, tenant, release client identity, resource group, registry, API, worker, migration job and scheduler. Registry metadata Reader access was explicitly approved and assigned. `AZURE_DEPLOY_ENABLED=true` enables releases after the quality gates. Hosted login and readiness have passed; verify the exact release result in Actions before claiming a newer commit is deployed. See the [latest GitHub Actions results](https://github.com/SyreCodes/SyreBanksFitness/actions) for the deployed commit and release outcome.
+Repository variables are configured for the subscription, tenant, release client identity, resource group, registry, API, worker, migration job and scheduler. Registry metadata Reader access was explicitly approved and assigned. `AZURE_DEPLOY_ENABLED=true` enables releases after the quality gates; it is temporarily false during the recovery described above. Hosted login and readiness have passed; verify the exact release result in Actions before claiming a newer commit is deployed. See the [latest GitHub Actions results](https://github.com/SyreCodes/SyreBanksFitness/actions) for the deployed commit and release outcome.
 
-The release workflow downloads the exact production image that passed CI, pushes it to ACR and deploys its immutable digest. It runs a compatible migration inside the VNet, keeps traffic on the old API while checking the candidate, checks the updated worker and outbox execution, then promotes the API. Failure attempts to restore prior traffic and background images. Database migrations are never automatically downgraded. Keep every migration compatible with the previous API and worker release. Rollback logic has automated tests; a deliberate production failure drill has not been performed.
+The first automatic run passed all four quality gates but failed OIDC authentication before deploying. GitHub's verified immutable subject is `repo:SyreCodes@168902141/SyreBanksFitness@1407087930:environment:production`. The Azure credential `github-production` was updated to this exact subject; issuer and audience remain unchanged. No deployment roles were broadened. A successful subsequent release is still required to verify the fix.
+
+The release workflow downloads the exact production image that passed CI, pushes it to ACR and deploys its immutable digest. It runs a compatible migration inside the VNet, keeps traffic on the old API while checking the candidate, checks the updated worker and outbox execution, then promotes the API and checks both its generated hostname and the public origin from `PUBLIC_WEB_URL`. A failed custom-domain check triggers the same traffic/background rollback. Failure attempts to restore prior traffic and background images. Database migrations are never automatically downgraded. Keep every migration compatible with the previous API and worker release. Rollback logic has automated tests; a deliberate production failure drill has not been performed.
 
 ## Operational check and restart
 
@@ -92,7 +102,7 @@ Inspect the exact failing execution/release before retrying. If Azure reports re
 
 The first administrator was created using the interactive `python -m app.bootstrap_admin` entry point. It refuses to run if a super administrator already exists. Its password was saved privately outside the repository and delivered to the owner; no password is included here. Do not rerun the bootstrap or seed to recover an existing account.
 
-Before a substantial future schema change, check backup health and test recovery. Seven-day database backups and media soft delete are configured, but a restore drill has not been performed. Logs are available; dedicated availability alerts and a custom domain are not configured. Email delivery remains deferred. These limits should be resolved as the app moves from initial owner testing to wider client use.
+Before a substantial future schema change, check backup health and test recovery. Seven-day database backups and media soft delete are configured, but a restore drill has not been performed. Logs are available; dedicated availability alerts are not configured. Custom-domain setup and recovery status are recorded above. Email delivery remains deferred. These limits should be resolved as the app moves from initial owner testing to wider client use.
 
 ## References
 
@@ -100,3 +110,7 @@ Before a substantial future schema change, check backup health and test recovery
 - [GitHub OIDC with Azure](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect)
 - [Private Key Vault access](https://learn.microsoft.com/en-us/azure/key-vault/general/private-link-service)
 - [Container Apps network rules](https://learn.microsoft.com/en-us/azure/container-apps/firewall-integration)
+
+- [GitHub immutable OIDC subject format](https://docs.github.com/en/actions/reference/security/oidc)
+- [Azure subscription states and recovery](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/subscription-states)
+- [Azure managed HTTPS certificates](https://learn.microsoft.com/en-us/azure/container-apps/custom-domains-managed-certificates)
