@@ -2,11 +2,11 @@
 
 A modular fitness coaching platform with a React 19 client and FastAPI API. Public marketing, applications/CRM, client assessment, program snapshots, workout logging, progress, habits, check-ins, private messaging, booking, editable products/content, media and audit records are connected to durable API models.
 
-See [implementation status](docs/IMPLEMENTATION_STATUS.md) for verified scope and outstanding work. This repository is a development milestone; production acceptance is not complete.
+See [implementation status](docs/IMPLEMENTATION_STATUS.md) for verified scope and outstanding work. The app is hosted on Azure for owner testing. See [Azure deployment](docs/AZURE_DEPLOYMENT.md) for verified checks, access, and remaining release prerequisites.
 
 ## GitHub publication and quality checks
 
-The [deployment guide](docs/DEPLOYMENT.md) covers publishing this code to GitHub and what remains for future hosting. GitHub Actions checks the frontend, API, browser flows, and production image on every push and pull request to `main`. No live hosting is configured: pushing a commit publishes source and starts CI, but does not make the app available on a public URL. The user plans to consider Vercel later.
+The app is hosted in Azure South Africa North: [open Syre Banks Fitness](https://ca-syrebanks-api.orangemeadow-cb1b109d.southafricanorth.azurecontainerapps.io). GitHub Actions checks the frontend, API, browser flows, and production image on every push and pull request to `main`. The release workflow is prepared, but its first production run awaits approval for registry metadata access; automatic release is temporarily disabled. See the [deployment guide](docs/DEPLOYMENT.md) and [Azure operational guide](docs/AZURE_DEPLOYMENT.md). Local edits alone do not deploy.
 
 ## Requirements
 
@@ -85,6 +85,6 @@ The E2E suite creates clearly named synthetic acceptance records in the developm
 
 ## Configuration & deployment
 
-Never commit `.env`. Production requires PostgreSQL, a unique JWT secret, HTTPS origins, production cookie settings, live Redis, private S3 storage, database backups and tested migrations. Configure email, Flutterwave and optional OAuth providers on the server. Checkout redirects never activate a plan; the backend verifies provider transactions and deduplicates financial writes.
+Never commit `.env`. Production requires PostgreSQL, a unique JWT secret, HTTPS origins, production cookie settings, live Redis, private object storage, database backups and tested migrations. Configure email, Flutterwave and optional OAuth providers on the server. Checkout redirects never activate a plan; the backend verifies provider transactions and deduplicates financial writes.
 
 See [architecture](docs/ARCHITECTURE.md), [database](docs/DATABASE.md), [API](docs/API.md), [security](docs/SECURITY.md), [integrations](docs/INTEGRATIONS.md), [deployment](docs/DEPLOYMENT.md), and [development](docs/DEVELOPMENT.md).

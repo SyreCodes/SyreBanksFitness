@@ -1,132 +1,102 @@
-# Azure deployment and handoff
+# Azure production deployment
 
-Status: preparation in progress; **the application is not live**. No database, application, worker, migration job, or scheduled outbox job has been verified as deployed. Redis cluster creation was submitted, but its database creation returned “cluster is not yet running”; inspect the cluster before retrying only the missing database. GitHub automatic release remains disabled. This document records progress for resuming safely; it is not evidence that unexecuted steps succeeded.
+The application is hosted in **South Africa North** at:
 
-## Confirmed resources
+**https://ca-syrebanks-api.orangemeadow-cb1b109d.southafricanorth.azurecontainerapps.io**
 
-Subscription `686467b0-6295-4d5d-8fb6-d06fd003bde3`, tenant `53e15a06-0e85-4291-8864-7725106b0be2`, resource group `rg-syrebanks-prod`, region `southafricanorth`.
+On 24 October 2026, hosted checks passed for `/ready`, the login page, administrator login/profile/session refresh/logout, exercise video upload/download/seeking/access control/removal, and Celery worker processing. Production was started fresh: no local database, demo seed, clients, programs or media were imported. The only user created during setup is the owner's first super administrator. Temporary exercise/media test records were removed after verification.
 
-| Resource | Confirmed state |
+Email was explicitly deferred. Email verification and password-reset delivery are unavailable until SMTP is configured and tested. Registration itself can create an account without sending mail. Payment provider activation and other unfinished product features are separate from this hosting deployment.
+
+## Resources and access
+
+Subscription `686467b0-6295-4d5d-8fb6-d06fd003bde3`, tenant `53e15a06-0e85-4291-8864-7725106b0be2`, group `rg-syrebanks-prod`, region `southafricanorth`.
+
+| Resource | Configuration |
 | --- | --- |
-| VNet `vnet-syrebanks-prod` | 10.42.0.0/16; app, PostgreSQL and private endpoint subnets created |
-| Environment `cae-syrebanks-prod` | Created; private connectivity must still be tested from a running job |
-| Log Analytics `law-syrebanks-prod` | Created, 30-day retention |
-| Registry `acrsyrebanks686467b0` | Basic; public network enabled; authenticated image access; login server `acrsyrebanks686467b0.azurecr.io` |
-| Identity `id-syrebanks-runtime` | Created; existing AcrPull, Blob Data Contributor, Key Vault Secrets User grants |
-| Storage `stsyrebanks686467b0` | Public network disabled by policy; anonymous and shared-key access disabled; private container `syrebanks-media`; 14-day soft delete |
-| Vault `kv-syrebanks-686467b0` | Public network disabled by governance, RBAC and purge protection enabled |
-| Vault private endpoint `pe-syrebanks-keyvault` | Approved; DNS zone link `link-syrebanks-keyvault` completed and DNS zone group `default` succeeded |
-| Blob private endpoint `pe-syrebanks-blob` | Approved and succeeded; private DNS zone, VNet link and endpoint zone group completed |
-| PostgreSQL private DNS | `syrebanks.private.postgres.database.azure.com` linked to VNet |
+| `cae-syrebanks-prod` | External Container Apps environment, Consumption profile, VNet integration |
+| `ca-syrebanks-api` | Built React client and FastAPI on one HTTPS origin, port 10000, 0.5 CPU / 1 GiB, 1–2 replicas |
+| `ca-syrebanks-worker` | Celery worker, 0.5 CPU / 1 GiB, one replica, single revision |
+| `job-syrebanks-migrate` | Manual `alembic upgrade head`, one replica, separate migration identity |
+| `job-syrebanks-outbox` | `python -m app.dispatch_outbox` every minute, one replica |
+| `acrsyrebanks686467b0` | Basic registry, authenticated image access, admin account disabled |
+| `pg-syrebanks-686467b0` | PostgreSQL 17, Standard_B1ms, 32 GiB, seven-day backups, private networking |
+| `redis-syrebanks-prod` | Azure Managed Redis Balanced_B0, high availability, non-clustered, verified TLS, private endpoint |
+| `stsyrebanks686467b0` | Private `syrebanks-media` container, managed identity access, shared keys/anonymous access disabled, 14-day soft delete |
+| `kv-syrebanks-686467b0` | Private endpoint, RBAC, purge protection; per-secret application access |
+| `law-syrebanks-prod` | Application/platform logs, 30-day retention |
 
-Do not enable public Key Vault/storage access to work around governance. Cloud Shell outside the VNet cannot access private secrets or media. Use a temporary Container Apps job inside this environment to test private DNS, authenticate with a managed identity, and bootstrap secrets without printing them. Do not assume that the earlier `postgres-admin-password` write succeeded; distinguish SecretNotFound from a network/permission error before generating anything.
+The approved planning estimate is US$200–240/month before tax and heavy video traffic. It is not a spending cap.
 
-## Approved sizing and remaining decisions
+`vnet-syrebanks-prod` uses 10.42.0.0/16. Subnets: Container Apps 10.42.0.0/23, PostgreSQL 10.42.2.0/24, private endpoints 10.42.3.0/24. Private DNS links cover PostgreSQL, Key Vault, Blob and Redis. Do not enable public data-service access to work around governance.
 
-The preliminary managed-service estimate is roughly USD 200–240/month before tax, heavy video transfer, or unexpected logging, using a small PostgreSQL server and highly available Managed Redis. This is a planning estimate, not an Azure quote or hard cap. The user approved proceeding with the USD 200–240/month setup. Planned sizes: PostgreSQL 17 Standard_B1ms (Burstable), 32 GiB, seven-day backups; Managed Redis Balanced_B0 with high availability, NoCluster, TLS and NoEviction. Keep work within this envelope; these are not spending caps. The portal's subscription total includes other projects and is not a credit balance. ACR Premium is not needed for the currently confirmed public registry endpoint.
+Runtime identity `id-syrebanks-runtime` reads only its application secrets, pulls images, and accesses the media container. `id-syrebanks-migrations` reads the migration connection secret and JWT secret and pulls images. The application database role cannot create tables or administer PostgreSQL; migrations use their own schema-owning role. Both database connections verify TLS certificates and hostnames. Browser media is served through the authorized API with GET/HEAD/range support; the browser never needs direct private Blob connectivity.
 
-Select and verify a production email sender. The code requires STARTTLS SMTP with a valid certificate. A configured sender and real delivery test are prerequisites for registration/password reset; an empty SMTP configuration does not constitute a working production email service. Do not use the example Gmail address as an assumed authorized sender.
+The three temporary setup jobs, bootstrap identity and its scoped grants were removed after initialization and hosted checks on 24 October. Their old initialization commands must not be treated as a routine deployment step. Do not run the development seed in production.
 
-## Resume in Bash Cloud Shell
+## Automatic releases
 
-These initial commands inspect existing resources. Blob DNS creation is already complete; the conditional repair commands below are for recovery only. Run one command/block at a time and check the result. They contain resource identifiers only, no passwords.
+Completed, locally checked changes are committed and pushed to `origin main`. GitHub Actions runs frontend, API, browser and production-image quality gates. Local Codex edits alone do not deploy. A failed quality gate prevents release; a successful release is required before calling a new commit deployed.
+
+The `production` environment accepts only `main`. The workflow uses GitHub OIDC with `id-syrebanks-github`; no long-lived Azure password is stored in GitHub. Its assignments are restricted to this application's registry, four app/job resources, runtime/migration identities, and Container Apps environment. Registry metadata requires Reader in addition to AcrPush.
+
+Repository variables are configured for the subscription, tenant, release client identity, resource group, registry, API, worker, migration job and scheduler. **First-release blocker:** registry metadata Reader access is awaiting explicit approval. Automatic release is temporarily disabled (`AZURE_DEPLOY_ENABLED=false`) until this grant is approved. Set it to `true` only after that prerequisite is satisfied; hosted login and readiness have already passed. See the [latest GitHub Actions results](https://github.com/SyreCodes/SyreBanksFitness/actions) for the deployed commit and release outcome.
+
+The release workflow downloads the exact production image that passed CI, pushes it to ACR and deploys its immutable digest. It runs a compatible migration inside the VNet, keeps traffic on the old API while checking the candidate, checks the updated worker and outbox execution, then promotes the API. Failure attempts to restore prior traffic and background images. Database migrations are never automatically downgraded. Keep every migration compatible with the previous API and worker release. Rollback logic has automated tests; a deliberate production failure drill has not been performed.
+
+## Operational check and restart
+
+Use a signed-in Azure Bash Cloud Shell, or a locally authenticated Azure CLI. The following commands print status only, without credentials.
 
 ```bash
 az account set --subscription 686467b0-6295-4d5d-8fb6-d06fd003bde3
 ```
 
 ```bash
-az network private-dns zone list -g rg-syrebanks-prod --query '[].name' -o table
+az postgres flexible-server show -g rg-syrebanks-prod -n pg-syrebanks-686467b0 --query '{State:state,PublicAccess:network.publicNetworkAccess}' -o json
 ```
 
-If `privatelink.blob.core.windows.net` is absent, create it:
+Expected: `Ready`, `Disabled`.
+
+**Known availability issue:** the activity log shows a service identity from another tenant stopped PostgreSQL at 22:08 UTC on 23 October 2026. Restarting it restored the app on 24 October. The caller was `da847d8c-ee71-44de-b462-6775e7d649a7`, application `a1a9c5b6-7a4f-4288-89ab-6805873f65d1`. The schedule and operator have not been identified. The subscription administrator must establish why it happened and whether this subscription can provide continuous production availability. Do not disable organization policies or automation without authorization.
+
+If PostgreSQL is `Stopped`, resume the existing server:
 
 ```bash
-az network private-dns zone create -g rg-syrebanks-prod -n privatelink.blob.core.windows.net --query '{Zone:name}' -o json
+az postgres flexible-server start -g rg-syrebanks-prod -n pg-syrebanks-686467b0
 ```
 
+Wait until the status is `Ready`. Do not recreate the database or reset its passwords. Then check:
+
 ```bash
-az network private-dns link vnet list -g rg-syrebanks-prod -z privatelink.blob.core.windows.net --query '[].{Link:name,Network:virtualNetwork.id,State:virtualNetworkLinkState}' -o json
+curl --fail --silent --show-error 'https://ca-syrebanks-api.orangemeadow-cb1b109d.southafricanorth.azurecontainerapps.io/ready'
 ```
 
-If no link to `vnet-syrebanks-prod` exists:
+Expected: `status: ready`, `database: connected`, `redis: connected`. Also verify actual login in the browser.
 
 ```bash
-az network private-dns link vnet create -g rg-syrebanks-prod -z privatelink.blob.core.windows.net -n link-syrebanks-blob --virtual-network vnet-syrebanks-prod --registration-enabled false --query '{Link:name,State:virtualNetworkLinkState,Status:provisioningState}' -o json
-```
-
-```bash
-az network private-endpoint dns-zone-group list -g rg-syrebanks-prod --endpoint-name pe-syrebanks-blob --query '[].{Name:name,Zones:privateDnsZoneConfigs[].privateDnsZoneId}' -o json
-```
-
-If there is no DNS zone group:
-
-```bash
-az network private-endpoint dns-zone-group create -g rg-syrebanks-prod --endpoint-name pe-syrebanks-blob -n default --private-dns-zone privatelink.blob.core.windows.net --zone-name blob --query '{Group:name,Status:provisioningState}' -o json
+az containerapp revision list -g rg-syrebanks-prod -n ca-syrebanks-api --query '[].{Revision:name,Active:properties.active,Health:properties.healthState,Running:properties.runningState}' -o table
 ```
 
 ```bash
-az network private-dns record-set a list -g rg-syrebanks-prod -z privatelink.blob.core.windows.net --query '[].{Name:name,Addresses:aRecords[].ipv4Address}' -o json
-```
-
-Database/cache sizing is approved. After DNS, verify private connectivity and configure the production sender. The order is: private connectivity test; isolated bootstrap identity; secret creation/reuse; private PostgreSQL and database; compatible non-clustered TLS Redis; least-privilege app DB account; runtime secrets; image build; migration; API/worker/outbox provisioning; admin creation; hosted acceptance; OIDC setup and enable automatic releases. A complete executable bootstrap sequence is still being prepared; the commands below must not be treated as a finished deployment.
-
-## Latest checkpoint (2026-10-23)
-
-- GitHub main commit `7b88c274849aa3a08f04e45cb73fe900f96b5791` passed web, API, browser and production-image CI. Release was deliberately skipped until infrastructure is ready.
-- `job-syrebanks-network-check` was created. Execution `job-syrebanks-network-check-wc58yes` was started; its result still needs checking.
-- Redis cluster creation was submitted. The CLI attempted database creation before the cluster finished and returned Conflict. Do not recreate or delete the cluster; inspect it, then create only the missing default database.
-- The temporary bootstrap identity was not created: the approval reviewer reached an account usage limit before that command ran.
-- The previous `/tmp` CLI sign-in expired. Local execution now uses a private persistent configuration at `/home/syre/.local/state/syrebanks-azure-cli`; this path contains credentials and must never be committed, shared or printed. Cloud Shell uses its normal sign-in instead.
-
-Inspect the partial operations after sign-in:
-
-```bash
-az containerapp job execution show -g rg-syrebanks-prod -n job-syrebanks-network-check --job-execution-name job-syrebanks-network-check-wc58yes --query '{Name:name,Status:properties.status}' -o json
+az containerapp job execution list -g rg-syrebanks-prod -n job-syrebanks-outbox --query '[].{Execution:name,Status:properties.status}' -o table
 ```
 
 ```bash
-az redisenterprise show -g rg-syrebanks-prod -n redis-syrebanks-prod --query '{Name:name,State:provisioningState,ResourceState:resourceState,Host:hostName,Sku:sku.name}' -o json
+gh run list --repo SyreCodes/SyreBanksFitness --branch main --limit 5
 ```
 
-```bash
-az redisenterprise database list -g rg-syrebanks-prod --cluster-name redis-syrebanks-prod --query '[].{Name:name,State:provisioningState,Clustering:clusteringPolicy,TLS:clientProtocol}' -o json
-```
+Inspect the exact failing execution/release before retrying. If Azure reports registry not ready or a stopped database, diagnose that resource rather than broadening permissions. Never print connection URLs, tokens, secret values or Redis keys while troubleshooting.
 
-Only if the cluster is running and its database list is empty:
+## Account and data operations
 
-```bash
-az redisenterprise database create -g rg-syrebanks-prod --cluster-name redis-syrebanks-prod --client-protocol Encrypted --clustering-policy NoCluster --eviction-policy NoEviction --access-keys-auth Enabled --port 10000 --query '{Name:name,State:provisioningState}' -o json
-```
+The first administrator was created using the interactive `python -m app.bootstrap_admin` entry point. It refuses to run if a super administrator already exists. Its password was saved privately outside the repository and delivered to the owner; no password is included here. Do not rerun the bootstrap or seed to recover an existing account.
 
-## Runtime configuration
+Before a substantial future schema change, check backup health and test recovery. Seven-day database backups and media soft delete are configured, but a restore drill has not been performed. Logs are available; dedicated availability alerts and a custom domain are not configured. Email delivery remains deferred. These limits should be resolved as the app moves from initial owner testing to wider client use.
 
-Serve the built React app and FastAPI from the same HTTPS origin using `Dockerfile.prod`, container port 10000. Set `ENVIRONMENT=production`, `PUBLIC_WEB_URL` and `ALLOWED_ORIGINS` to that origin, and use a unique JWT secret. Use `DATABASE_URL` with PostgreSQL certificate verification and an app-only database role. `REDIS_URL` must use `rediss://`, trusted CA and hostname verification; Celery requires a compatible non-clustered endpoint. Never disable certificate checks.
+## References
 
-For media set `STORAGE_PROVIDER=azure`, `AZURE_STORAGE_ACCOUNT_URL=https://stsyrebanks686467b0.blob.core.windows.net`, `AZURE_STORAGE_CONTAINER=syrebanks-media`, and `AZURE_MANAGED_IDENTITY_CLIENT_ID=68624ec1-df89-4a74-a723-f557a426b9e4`. Attach the matching user-assigned identity to API/worker/jobs as needed. Azure media is proxied by the authorized API route, including GET ranges and HEAD; browser clients do not need direct Blob access or SAS credentials. Blob Delegator is unnecessary for this implementation.
-
-Reference secrets in Key Vault using managed identity. Scope runtime secret permissions to app secrets before production; the runtime must not be able to retrieve the database administrator password. Use a separate temporary bootstrap identity for administrative initialization, then remove its grants. Do not put secret values into command output, Git, image layers, or workflow artifacts.
-
-The worker command is `celery -A app.core.jobs.celery_app worker --loglevel=INFO --concurrency=1`. Keep one replica and use single revision mode. The manual migration job command must be exactly `alembic upgrade head`. The scheduled job command must be exactly `python -m app.dispatch_outbox`, normally once per minute. Each job uses parallelism 1 and replica completion count 1. Configure retry/timeout bounds. Email delivery is at-least-once; a process failure after SMTP acceptance can still produce a duplicate.
-
-## Automatic releases
-
-`ci.yml` runs web/API/browser/image quality checks. When `AZURE_DEPLOY_ENABLED=true` on the repository, it preserves the smoke-tested image as a one-day artifact, then calls `azure-release.yml`. Pull requests never deploy. The release job uses the `production` environment, OIDC, a concurrency lock, the tested image, and an immutable registry digest. A superseded main commit is refused.
-
-Before enabling it, create the GitHub OIDC identity with issuer `https://token.actions.githubusercontent.com`, subject `repo:SyreCodes/SyreBanksFitness:environment:production`, and audience `api://AzureADTokenExchange`. Configure the GitHub production environment to permit main. Give the release identity only the needed registry push, app/job update/start/read, and managed identity assignment permissions scoped to this app's resources. OIDC access to modify jobs can use their attached identities, so do not attach the privileged bootstrap identity to release-managed jobs.
-
-Set repository variables `AZURE_DEPLOY_ENABLED` (initially `false`), `AZURE_SUBSCRIPTION_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_ACR_NAME`, `AZURE_API_APP`, `AZURE_WORKER_APP`, `AZURE_MIGRATION_JOB`, and `AZURE_SCHEDULER_JOB`. Optional: `AZURE_IMAGE_REPOSITORY` (default `syrebanks-fitness`) and `AZURE_RUNNER_LABELS` (JSON array, default `["ubuntu-latest"]`). The confirmed public ACR supports the GitHub-hosted runner. If a future policy makes ACR private, use a suitably isolated runner with private connectivity; don't weaken the policy.
-
-The script expects existing healthy single-container app/job resources. It runs migrations inside the VNet and waits for that exact execution, pins old API traffic while checking the candidate revision, updates and checks the worker/outbox, then switches API traffic. It checks `/ready` and the login page; this does not authenticate a real user. Failure restores old traffic/background images where possible. Migrations are never automatically downgraded. Keep migrations backward-compatible with the prior API/worker release.
-
-## Completion checks
-
-Before reporting production ready, test actual admin/client login and logout, password reset/registration email delivery, `/ready`, video upload/playback/seeking with authorization, a worker task, scheduled outbox dispatch, database backup restore, monitoring/alerts, and a main-branch CI deployment. Create the first administrator with `python -m app.bootstrap_admin` through an interactive terminal; never run development seed data in production. Existing local database data and uploaded media have not been migrated automatically.
-
-## Source references
-
-- [Container Apps jobs and permissions](https://learn.microsoft.com/en-us/azure/container-apps/jobs)
-- [Container Apps releases from GitHub Actions](https://learn.microsoft.com/en-us/azure/container-apps/github-actions)
+- [Azure Container Apps jobs](https://learn.microsoft.com/en-us/azure/container-apps/jobs)
 - [GitHub OIDC with Azure](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect)
-- [Key Vault private networking](https://learn.microsoft.com/en-us/azure/key-vault/general/private-link-service)
-- [Azure Managed Redis capacity and availability](https://learn.microsoft.com/en-us/azure/redis/plan-tiers-and-capacity)
+- [Private Key Vault access](https://learn.microsoft.com/en-us/azure/key-vault/general/private-link-service)
+- [Container Apps network rules](https://learn.microsoft.com/en-us/azure/container-apps/firewall-integration)
