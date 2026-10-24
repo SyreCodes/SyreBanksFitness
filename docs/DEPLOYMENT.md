@@ -1,6 +1,6 @@
 # GitHub and deployment workflow
 
-The current release target is the [SyreCodes/SyreBanksFitness repository](https://github.com/SyreCodes/SyreBanksFitness), on its `main` branch. GitHub stores the source and runs [quality gates](../.github/workflows/ci.yml); it does **not** run this React/FastAPI application as a hosted service. Azure hosts the app, and hosted login, video and worker checks passed on 24 October 2026. Automatic release is temporarily disabled while registry metadata access awaits approval; its first GitHub release still needs verification. See [Azure deployment](AZURE_DEPLOYMENT.md) for the exact checkpoint. Local Codex edits reach GitHub only after they are committed and pushed.
+The current release target is the [SyreCodes/SyreBanksFitness repository](https://github.com/SyreCodes/SyreBanksFitness), on its `main` branch. GitHub stores the source and runs [quality gates](../.github/workflows/ci.yml); it does **not** run this React/FastAPI application as a hosted service. Azure hosts the app, and hosted login, video and worker checks passed on 24 October 2026. Registry access and GitHub OIDC are configured, and automatic release is enabled after every quality gate passes. Verify each release in GitHub Actions. See [Azure deployment](AZURE_DEPLOYMENT.md) for the exact checkpoint. Local Codex edits reach GitHub only after they are committed and pushed.
 
 ## Repository workflow
 
