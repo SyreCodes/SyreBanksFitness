@@ -1,5 +1,7 @@
 import copy
 import importlib.util
+import json
+import stat
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -197,6 +199,48 @@ class ReleaseTests(unittest.TestCase):
     def test_tag_only_image_is_rejected(self):
         with self.assertRaises(module.ReleaseError):
             module.Release('s', 'g', 'a', 'w', 'm', 'j', 'repo:latest', 'r-test')
+
+    def test_job_image_override_preserves_complete_execution_template(self):
+        for name in ('migrate', 'schedule'):
+            with self.subTest(job=name):
+                release = FakeRelease()
+                template = release.resources[name]['properties']['template']
+                template['containers'][0].update({
+                    'env': [{'name': 'DATABASE_URL', 'secretRef': 'database-url'},
+                            {'name': 'ENVIRONMENT', 'value': 'production'}],
+                    'resources': {'cpu': 0.5, 'memory': '1Gi'},
+                    'volumeMounts': [{'volumeName': 'scratch', 'mountPath': '/scratch'}],
+                    'args': None,
+                })
+                template['volumes'] = [{'name': 'scratch', 'storageType': 'EmptyDir'}]
+                template['initContainers'] = None
+                original = copy.deepcopy(template)
+                submitted = []
+                paths = []
+
+                def azure(*args, paths=paths, submitted=submitted):
+                    if args[:3] == ('containerapp', 'job', 'start'):
+                        self.assertNotIn('--image', args)
+                        path = Path(args[args.index('--yaml') + 1])
+                        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                        paths.append(path)
+                        submitted.append(json.loads(path.read_text()))
+                        return {'name': 'job-123'}
+                    return {'name': 'job-123', 'properties': {'status': 'Succeeded'}}
+
+                with patch.object(release, 'az', side_effect=azure):
+                    module.Release.run_job(release, name, name)
+                expected = copy.deepcopy(original)
+                expected['containers'][0]['image'] = IMAGE
+                self.assertEqual(submitted, [expected])
+                self.assertEqual(template, original)
+                self.assertFalse(paths[0].exists())
+
+    def test_changed_job_container_fails_before_execution(self):
+        release = FakeRelease()
+        with patch.object(release, 'az') as azure, self.assertRaisesRegex(module.ReleaseError, 'container changed'):
+            module.Release.run_job(release, 'migrate', 'wrong-container')
+        azure.assert_not_called()
 
     def test_job_polls_exact_execution_and_stops_it_on_failure(self):
         release = FakeRelease()

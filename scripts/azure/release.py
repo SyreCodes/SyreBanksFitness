@@ -1,11 +1,13 @@
 """Release an immutable image to existing Azure resources; never provision or downgrade DBs."""
 
 import argparse
+import copy
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -92,8 +94,18 @@ class Release:
         self.poll(check, f"readiness and login page at {host}")
 
     def run_job(self, name, container):
-        execution = self.az("containerapp", "job", "start", "--name", name,
-                            "--container-name", container, "--image", self.image)
+        job = self.show(name, job=True)
+        if single_container(job)["name"] != container:
+            raise ReleaseError("Job container changed before execution")
+        template = copy.deepcopy(job["properties"]["template"])
+        template["containers"][0]["image"] = self.image
+        # A start override replaces the entire template, rather than merging it.
+        # Preserve commands, secret references, resources and volumes. JSON is valid YAML.
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", encoding="utf-8") as payload:
+            json.dump(template, payload)
+            payload.flush()
+            execution = self.az("containerapp", "job", "start", "--name", name,
+                                "--yaml", payload.name)
         execution_name = execution.get("name")
         if not execution_name:
             raise ReleaseError(f"No execution identity returned for {name}; inspect job before retrying")
