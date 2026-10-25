@@ -134,7 +134,40 @@ class Release:
                 print(f"WARNING: could not confirm stop of {execution_name}; inspect before retrying", file=sys.stderr)
             raise
 
+    def app_idle(self, name):
+        # Configuration can become visible before the asynchronous write finishes.
+        # Failed/canceled operations are idle too, allowing rollback to repair them.
+        def check():
+            state = self.show(name)
+            if state["properties"].get("provisioningState") in {"Succeeded", "Failed", "Canceled"}:
+                return state
+            return None
+        return self.poll(check, f"completion of the current update to {name}")
+
+    @staticmethod
+    def traffic_pinned(state, revision):
+        config = state["properties"]["configuration"]
+        weighted = [entry for entry in (config.get("ingress") or {}).get("traffic", [])
+                    if entry.get("weight", 0) > 0]
+        return (config.get("activeRevisionsMode") == "Multiple" and len(weighted) == 1
+                and weighted[0].get("revisionName") == revision
+                and weighted[0]["weight"] == 100)
+
+    def wait_for_traffic(self, revision):
+        def check():
+            state = self.show(self.api)
+            status = state["properties"].get("provisioningState")
+            if status in {"Failed", "Canceled"}:
+                raise ReleaseError("API configuration update failed before traffic was verified")
+            return status == "Succeeded" and self.traffic_pinned(state, revision)
+        self.poll(check, f"completed API update with traffic pinned to {revision}")
+
     def prepare_api(self, old_revision, location):
+        state = self.app_idle(self.api)
+        if state["properties"]["provisioningState"] != "Succeeded":
+            raise ReleaseError("Previous API configuration update did not succeed")
+        if self.traffic_pinned(state, old_revision):
+            return
         # The CLI set-mode helper reads secret values before a full PUT. A merge
         # PATCH needs only the existing app-write grant and leaves secrets untouched.
         path = (f"https://management.azure.com/subscriptions/{self.subscription}"
@@ -144,24 +177,26 @@ class Release:
         body = {"location": location, "properties": {"configuration": {
             "activeRevisionsMode": "Multiple", "ingress": {"traffic": traffic}}}}
         self.az("rest", "--method", "patch", "--url", path, "--body", json.dumps(body))
-
-        def pinned():
-            config = self.show(self.api)["properties"]["configuration"]
-            weighted = [entry for entry in config.get("ingress", {}).get("traffic", [])
-                        if entry.get("weight", 0) > 0]
-            return (config.get("activeRevisionsMode") == "Multiple" and len(weighted) == 1
-                    and weighted[0].get("revisionName") == old_revision
-                    and weighted[0]["weight"] == 100)
-        self.poll(pinned, "multiple revisions with traffic pinned to previous API")
+        self.wait_for_traffic(old_revision)
 
     def traffic(self, revision):
+        state = self.app_idle(self.api)
+        if (state["properties"]["provisioningState"] == "Succeeded"
+                and self.traffic_pinned(state, revision)):
+            return
         self.az("containerapp", "ingress", "traffic", "set", "--name", self.api,
                 "--revision-weight", f"{revision}=100")
+        self.wait_for_traffic(revision)
 
     def update_app(self, name, container, image, suffix):
+        self.app_idle(name)
         self.az("containerapp", "update", "--name", name, "--container-name", container,
                 "--image", image, "--revision-suffix", suffix)
-        return self.revision_ready(name, f"{name}--{suffix}", image)
+        revision = self.revision_ready(name, f"{name}--{suffix}", image)
+        state = self.app_idle(name)
+        if state["properties"]["provisioningState"] != "Succeeded":
+            raise ReleaseError(f"App update did not succeed for {name}")
+        return revision
 
     def update_scheduler(self, container, image):
         self.az("containerapp", "job", "update", "--name", self.scheduler,

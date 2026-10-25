@@ -208,7 +208,7 @@ class ReleaseTests(unittest.TestCase):
         release = FakeRelease()
         ready = copy.deepcopy(release.resources['api'])
         ready['properties']['configuration']['activeRevisionsMode'] = 'Multiple'
-        with patch.object(release, 'show', return_value=ready), patch.object(release, 'az') as azure:
+        with patch.object(release, 'show', side_effect=[release.resources['api'], ready]), patch.object(release, 'az') as azure:
             module.Release.prepare_api(release, 'api--old', 'southafricanorth')
         args = azure.call_args.args
         self.assertEqual(args[:3], ('rest', '--method', 'patch'))
@@ -218,6 +218,67 @@ class ReleaseTests(unittest.TestCase):
                 'activeRevisionsMode': 'Multiple',
                 'ingress': {'traffic': [{'revisionName': 'api--old', 'weight': 100}]}}}})
         self.assertEqual(azure.call_count, 1)
+
+    def test_prepare_waits_for_completion_even_when_new_configuration_is_visible(self):
+        release = FakeRelease()
+        pending = copy.deepcopy(release.resources['api'])
+        pending['properties']['configuration']['activeRevisionsMode'] = 'Multiple'
+        pending['properties']['provisioningState'] = 'InProgress'
+        done = copy.deepcopy(pending)
+        done['properties']['provisioningState'] = 'Succeeded'
+        with patch.object(release, 'show', side_effect=[release.resources['api'], pending, done]) as show, patch.object(release, 'az') as azure:
+            module.Release.prepare_api(release, 'api--old', 'southafricanorth')
+        self.assertEqual(show.call_count, 3)
+        self.assertEqual(azure.call_count, 1)
+
+    def test_prepare_reuses_completed_pinned_configuration_without_another_write(self):
+        release = FakeRelease()
+        release.resources['api']['properties']['configuration']['activeRevisionsMode'] = 'Multiple'
+        with patch.object(release, 'az') as azure:
+            module.Release.prepare_api(release, 'api--old', 'southafricanorth')
+        azure.assert_not_called()
+
+    def test_prepare_does_not_accept_pending_or_failed_configuration(self):
+        for status in ('InProgress', 'Failed', 'Canceled', None):
+            with self.subTest(status=status):
+                release = FakeRelease()
+                state = copy.deepcopy(release.resources['api'])
+                state['properties']['configuration']['activeRevisionsMode'] = 'Multiple'
+                state['properties']['provisioningState'] = status
+                with patch.object(release, 'show', return_value=state), patch.object(release, 'az') as azure, self.assertRaises(module.ReleaseError):
+                    module.Release.prepare_api(release, 'api--old', 'southafricanorth')
+                azure.assert_not_called()
+
+    def test_traffic_rollback_waits_for_pending_write_and_verifies_repair(self):
+        release = FakeRelease()
+        pending = copy.deepcopy(release.resources['api'])
+        pending['properties']['provisioningState'] = 'InProgress'
+        pending['properties']['configuration']['activeRevisionsMode'] = 'Multiple'
+        pending['properties']['configuration']['ingress']['traffic'] = [
+            {'revisionName': 'api--r-test', 'weight': 100}]
+        failed = copy.deepcopy(pending)
+        failed['properties']['provisioningState'] = 'Failed'
+        restored = copy.deepcopy(pending)
+        restored['properties']['provisioningState'] = 'Succeeded'
+        restored['properties']['configuration']['ingress']['traffic'] = [
+            {'revisionName': 'api--old', 'weight': 100}]
+        with patch.object(release, 'show', side_effect=[pending, failed, pending, restored]) as show, patch.object(release, 'az') as azure:
+            module.Release.traffic(release, 'api--old')
+        self.assertEqual(show.call_count, 4)
+        self.assertEqual(azure.call_count, 1)
+        self.assertIn('api--old=100', azure.call_args.args)
+
+    def test_traffic_verification_waits_for_stale_state_and_rejects_failed_update(self):
+        release = FakeRelease()
+        old = copy.deepcopy(release.resources['api'])
+        done = copy.deepcopy(old)
+        done['properties']['configuration']['activeRevisionsMode'] = 'Multiple'
+        with patch.object(release, 'show', side_effect=[old, done]) as show:
+            release.wait_for_traffic('api--old')
+        self.assertEqual(show.call_count, 2)
+        done['properties']['provisioningState'] = 'Failed'
+        with patch.object(release, 'show', return_value=done), self.assertRaises(module.ReleaseError):
+            release.wait_for_traffic('api--old')
 
     def test_rest_cli_scope_and_safe_error_diagnostics(self):
         release = FakeRelease()
