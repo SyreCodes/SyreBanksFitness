@@ -172,7 +172,8 @@ class Release:
             raise ReleaseError("Outbox job must have a schedule")
         for job in (migrate, scheduler):
             config = job["properties"]["configuration"]
-            trigger = config.get("manualTriggerConfig", config.get("scheduleTriggerConfig", {}))
+            trigger_key = "manualTriggerConfig" if config["triggerType"] == "Manual" else "scheduleTriggerConfig"
+            trigger = config.get(trigger_key) or {}
             if trigger.get("parallelism") != 1 or trigger.get("replicaCompletionCount") != 1:
                 raise ReleaseError("Jobs must run one replica per execution")
         for resource, expected in ((migrate, ["alembic", "upgrade", "head"]),

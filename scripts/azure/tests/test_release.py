@@ -16,6 +16,7 @@ def resource(name, *, job=None):
     container = {'name': name, 'image': OLD}
     if job:
         config = {'triggerType': job, 'provisioningState': 'Succeeded',
+                  'manualTriggerConfig': None, 'scheduleTriggerConfig': None,
                   ('manualTriggerConfig' if job == 'Manual' else 'scheduleTriggerConfig'):
                   {'parallelism': 1, 'replicaCompletionCount': 1}}
         container['command'] = (['alembic', 'upgrade', 'head'] if job == 'Manual'
@@ -129,6 +130,20 @@ class ReleaseTests(unittest.TestCase):
                 release.resources['worker']['properties']['configuration']['ingress'] = {
                     'external': external, 'targetPort': 10000}
                 with self.assertRaisesRegex(module.ReleaseError, 'Worker must have ingress disabled'):
+                    release.run()
+                self.assertEqual(release.events, [])
+
+    def test_missing_active_trigger_cannot_fall_back_to_inactive_trigger(self):
+        for name, active, inactive in (
+            ('migrate', 'manualTriggerConfig', 'scheduleTriggerConfig'),
+            ('schedule', 'scheduleTriggerConfig', 'manualTriggerConfig'),
+        ):
+            with self.subTest(job=name):
+                release = FakeRelease()
+                config = release.resources[name]['properties']['configuration']
+                config[inactive] = config[active]
+                config[active] = None
+                with self.assertRaisesRegex(module.ReleaseError, 'Jobs must run one replica'):
                     release.run()
                 self.assertEqual(release.events, [])
 
