@@ -1,20 +1,20 @@
 # Azure production deployment
 
-The application is hosted in **South Africa North**. Its generated infrastructure address is:
-
-**https://ca-syrebanks-api.orangemeadow-cb1b109d.southafricanorth.azurecontainerapps.io**
+The application is hosted in **South Africa North** at **https://ubuntustar.com**. The generated Azure hostname remains available for infrastructure checks.
 
 On 24 October 2026, hosted checks passed for `/ready`, the login page, administrator login/profile/session refresh/logout, exercise video upload/download/seeking/access control/removal, and Celery worker processing. Production was started fresh: no local database, demo seed, clients, programs or media were imported. The only user created during setup is the owner's first super administrator. Temporary exercise/media test records were removed after verification.
 
 Email was explicitly deferred. Email verification and password-reset delivery are unavailable until SMTP is configured and tested. Registration itself can create an account without sending mail. Payment provider activation and other unfinished product features are separate from this hosting deployment.
 
-## Custom domain and current recovery checkpoint
+## Custom domain and recovery
 
-The owner requested **https://ubuntustar.com** for the entire app. The authoritative Azure DNS zone is `ubuntustar.com` in `rg-rnd-dev`; public nameservers match Azure. Its previously empty root A record now points to `4.253.14.54`, and `asuid` holds the app ownership verification value. Existing Microsoft verification records were preserved. The hostname is attached with an Azure-managed HTTPS certificate; `/ready` returned HTTP 200 and the login page rendered through this domain after certificate issuance.
+The public website and login use **https://ubuntustar.com**. The authoritative Azure DNS zone is `ubuntustar.com` in `rg-rnd-dev`; its root A record points to `4.253.14.54`, and `asuid` contains the app ownership verification value. Existing Microsoft verification records were preserved. Azure provides the managed HTTPS certificate.
 
-The API's `PUBLIC_WEB_URL` was updated to the custom origin, with both the custom and generated Azure origins allowed during transition. Before the remaining service updates and real login check could finish, the subscription entered `Warned` and Container Apps reported `ManagedClusterSuspended`. The owner reactivated it; a fresh subscription API query now reports `Enabled`, but hosting recovery is still pending. App/job `Failed` placeholders during suspension are not evidence that the database or configuration was deleted. PostgreSQL still reports `Ready`.
+On 25 October 2026, Azure's hosting suspension cleared and the existing stopped PostgreSQL server was restarted. HTTPS readiness, the login page, actual administrator login/profile, secure session cookies, refresh and logout passed at the custom domain. The API, worker, migration job and scheduled outbox job now all use this public origin. The generated Azure origin remains allowed during transition. Accounts remain application-managed; there is no Entra sign-in integration.
 
-`AZURE_DEPLOY_ENABLED=false` temporarily pauses production releases during recovery; GitHub quality checks remain enabled. Do not recreate resources or rerun bootstrap/seed. Wait for existing app/job configurations and revisions to recover, then finish the public-origin settings on API, worker, migration and outbox jobs, verify real login/refresh/logout at the custom domain, and enable releases. The custom-domain rollout and first automatic release are not yet fully verified.
+The worker had an unintended web ingress configuration even though Celery does not serve HTTP. Its startup probes failed until ingress was disabled. The repaired worker responds to a queue health ping, and scheduled outbox executions succeed. Releases now reject worker ingress before running migrations or changing traffic.
+
+`AZURE_DEPLOY_ENABLED=true` enables releases after all quality gates pass. The actual Azure release job must succeed before claiming a newer commit is deployed; a passing source check is insufficient. Do not recreate resources, rerun bootstrap, import demo data or run the production seed.
 
 ## Resources and access
 
@@ -24,7 +24,7 @@ Subscription `686467b0-6295-4d5d-8fb6-d06fd003bde3`, tenant `53e15a06-0e85-4291-
 | --- | --- |
 | `cae-syrebanks-prod` | External Container Apps environment, Consumption profile, VNet integration |
 | `ca-syrebanks-api` | Built React client and FastAPI on one HTTPS origin, port 10000, 0.5 CPU / 1 GiB, 1–2 replicas |
-| `ca-syrebanks-worker` | Celery worker, 0.5 CPU / 1 GiB, one replica, single revision |
+| `ca-syrebanks-worker` | Celery worker, 0.5 CPU / 1 GiB, one replica, single revision, ingress disabled |
 | `job-syrebanks-migrate` | Manual `alembic upgrade head`, one replica, separate migration identity |
 | `job-syrebanks-outbox` | `python -m app.dispatch_outbox` every minute, one replica |
 | `acrsyrebanks686467b0` | Basic registry, authenticated image access, admin account disabled |
@@ -48,9 +48,9 @@ Completed, locally checked changes are committed and pushed to `origin main`. Gi
 
 The `production` environment accepts only `main`. The workflow uses GitHub OIDC with `id-syrebanks-github`; no long-lived Azure password is stored in GitHub. Its assignments are restricted to this application's registry, four app/job resources, runtime/migration identities, and Container Apps environment. Registry metadata requires Reader in addition to AcrPush.
 
-Repository variables are configured for the subscription, tenant, release client identity, resource group, registry, API, worker, migration job and scheduler. Registry metadata Reader access was explicitly approved and assigned. `AZURE_DEPLOY_ENABLED=true` enables releases after the quality gates; it is temporarily false during the recovery described above. Hosted login and readiness have passed; verify the exact release result in Actions before claiming a newer commit is deployed. See the [latest GitHub Actions results](https://github.com/SyreCodes/SyreBanksFitness/actions) for the deployed commit and release outcome.
+Repository variables are configured for the subscription, tenant, release client identity, resource group, registry, API, worker, migration job and scheduler. Registry metadata Reader access was explicitly approved and assigned. `AZURE_DEPLOY_ENABLED=true` enables releases after the quality gates. Set it to false to pause releases during an incident while keeping source checks active. Hosted login and readiness have passed; verify the exact release result in Actions before claiming a newer commit is deployed. See the [latest GitHub Actions results](https://github.com/SyreCodes/SyreBanksFitness/actions) for the deployed commit and release outcome.
 
-The first automatic run passed all four quality gates but failed OIDC authentication before deploying. GitHub's verified immutable subject is `repo:SyreCodes@168902141/SyreBanksFitness@1407087930:environment:production`. The Azure credential `github-production` was updated to this exact subject; issuer and audience remain unchanged. No deployment roles were broadened. A successful subsequent release is still required to verify the fix.
+The earlier OIDC authentication failure was traced to a legacy subject format. GitHub's verified immutable subject is `repo:SyreCodes@168902141/SyreBanksFitness@1407087930:environment:production`. The Azure credential `github-production` was updated to this exact subject; issuer and audience remain unchanged. No deployment roles were broadened. Each release must pass the OIDC sign-in step and complete deployment; inspect the exact Actions run for the result.
 
 The release workflow downloads the exact production image that passed CI, pushes it to ACR and deploys its immutable digest. It runs a compatible migration inside the VNet, keeps traffic on the old API while checking the candidate, checks the updated worker and outbox execution, then promotes the API and checks both its generated hostname and the public origin from `PUBLIC_WEB_URL`. A failed custom-domain check triggers the same traffic/background rollback. Failure attempts to restore prior traffic and background images. Database migrations are never automatically downgraded. Keep every migration compatible with the previous API and worker release. Rollback logic has automated tests; a deliberate production failure drill has not been performed.
 
@@ -68,7 +68,7 @@ az postgres flexible-server show -g rg-syrebanks-prod -n pg-syrebanks-686467b0 -
 
 Expected: `Ready`, `Disabled`.
 
-**Known availability issue:** the activity log shows a service identity from another tenant stopped PostgreSQL at 22:08 UTC on 23 October 2026. Restarting it restored the app on 24 October. The caller was `da847d8c-ee71-44de-b462-6775e7d649a7`, application `a1a9c5b6-7a4f-4288-89ab-6805873f65d1`. The schedule and operator have not been identified. The subscription administrator must establish why it happened and whether this subscription can provide continuous production availability. Do not disable organization policies or automation without authorization.
+**Known availability issue:** the activity log shows the same service identity from another tenant stopped PostgreSQL at approximately 22:08 UTC on both 23 and 24 October 2026 (shortly after midnight in Kigali). Restarting the existing server restored database access. This repeated timing suggests scheduled automation, but that schedule has not been independently identified. The caller was `da847d8c-ee71-44de-b462-6775e7d649a7`, application `a1a9c5b6-7a4f-4288-89ab-6805873f65d1`. The schedule and operator have not been identified. The subscription administrator must establish why it happened and whether this subscription can provide continuous production availability. Do not disable organization policies or automation without authorization.
 
 If PostgreSQL is `Stopped`, resume the existing server:
 

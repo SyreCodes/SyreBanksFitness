@@ -160,6 +160,8 @@ class Release:
                         else weighted[0].get("revisionName"))
         if not old_revision:
             raise ReleaseError("Cannot identify previous API revision")
+        if worker["properties"]["configuration"].get("ingress") is not None:
+            raise ReleaseError("Worker must have ingress disabled; it does not serve HTTP")
         if worker["properties"]["configuration"].get("activeRevisionsMode") != "Single":
             raise ReleaseError("Worker must use single revision mode")
         if worker["properties"]["template"].get("scale", {}).get("minReplicas", 0) < 1:

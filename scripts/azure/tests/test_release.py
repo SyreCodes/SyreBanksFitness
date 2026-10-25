@@ -122,6 +122,16 @@ class ReleaseTests(unittest.TestCase):
                     release.run()
                 self.assertEqual(release.events, [])
 
+    def test_worker_ingress_is_rejected_before_migration_or_mutation(self):
+        for external in (True, False):
+            with self.subTest(external=external):
+                release = FakeRelease()
+                release.resources['worker']['properties']['configuration']['ingress'] = {
+                    'external': external, 'targetPort': 10000}
+                with self.assertRaisesRegex(module.ReleaseError, 'Worker must have ingress disabled'):
+                    release.run()
+                self.assertEqual(release.events, [])
+
     def test_migration_failure_never_changes_app_or_traffic(self):
         release = FakeRelease()
         release.failure = 'migrate'
