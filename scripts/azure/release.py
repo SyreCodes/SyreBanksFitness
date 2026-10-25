@@ -40,14 +40,18 @@ class Release:
         self.attempts = 90
 
     def az(self, *args):
+        scope = ["--subscription", self.subscription]
+        if args[0] != "rest":
+            scope += ["--resource-group", self.group]
         result = subprocess.run(
-            ["az", *args, "--subscription", self.subscription, "--resource-group", self.group,
-             "--only-show-errors", "--output", "json"],
+            ["az", *args, *scope, "--only-show-errors", "--output", "json"],
             capture_output=True, text=True, timeout=300, check=False,
         )
         if result.returncode:
             # Azure errors can contain environment/secret values. Keep raw output off CI logs.
-            raise ReleaseError(f"Azure command failed: {' '.join(args[:3])}; inspect Azure activity logs")
+            code = re.search(r"^ERROR: \(([A-Za-z0-9_]{1,80})\)", result.stderr, re.MULTILINE)
+            detail = code.group(1) if code else f"CLI exit {result.returncode}"
+            raise ReleaseError(f"Azure command failed: {' '.join(args[:3])} ({detail}); inspect Azure activity logs")
         return json.loads(result.stdout or "null")
 
     def show(self, name, job=False):
@@ -130,6 +134,26 @@ class Release:
                 print(f"WARNING: could not confirm stop of {execution_name}; inspect before retrying", file=sys.stderr)
             raise
 
+    def prepare_api(self, old_revision, location):
+        # The CLI set-mode helper reads secret values before a full PUT. A merge
+        # PATCH needs only the existing app-write grant and leaves secrets untouched.
+        path = (f"https://management.azure.com/subscriptions/{self.subscription}"
+                f"/resourceGroups/{self.group}/providers/Microsoft.App/containerApps/{self.api}"
+                "?api-version=2025-07-01")
+        traffic = [{"revisionName": old_revision, "weight": 100}]
+        body = {"location": location, "properties": {"configuration": {
+            "activeRevisionsMode": "Multiple", "ingress": {"traffic": traffic}}}}
+        self.az("rest", "--method", "patch", "--url", path, "--body", json.dumps(body))
+
+        def pinned():
+            config = self.show(self.api)["properties"]["configuration"]
+            weighted = [entry for entry in config.get("ingress", {}).get("traffic", [])
+                        if entry.get("weight", 0) > 0]
+            return (config.get("activeRevisionsMode") == "Multiple" and len(weighted) == 1
+                    and weighted[0].get("revisionName") == old_revision
+                    and weighted[0]["weight"] == 100)
+        self.poll(pinned, "multiple revisions with traffic pinned to previous API")
+
     def traffic(self, revision):
         self.az("containerapp", "ingress", "traffic", "set", "--name", self.api,
                 "--revision-weight", f"{revision}=100")
@@ -202,9 +226,8 @@ class Release:
         candidate = f"{self.api}--{self.release_id}"
         candidate_started = worker_changed = scheduler_changed = False
         try:
-            self.az("containerapp", "revision", "set-mode", "--name", self.api, "--mode", "multiple")
-            # Never leave a latestRevision=100 rule in place when staging a new revision.
-            self.traffic(old_revision)
+            # Pin the previous revision before a candidate is created.
+            self.prepare_api(old_revision, api["location"])
             candidate_started = True
             revision = self.update_app(self.api, api_container["name"], self.image, self.release_id)
             self.smoke(revision.get("fqdn"))

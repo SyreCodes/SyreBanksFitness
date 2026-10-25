@@ -26,7 +26,7 @@ def resource(name, *, job=None):
     elif name == 'api':
         config['ingress'] = {'external': True, 'fqdn': 'app.example.com',
                              'traffic': [{'revisionName': 'api--old', 'weight': 100}]}
-    return {'name': name, 'properties': {'configuration': config, 'provisioningState': 'Succeeded',
+    return {'name': name, 'location': 'southafricanorth', 'properties': {'configuration': config, 'provisioningState': 'Succeeded',
             'latestReadyRevisionName': name + '--old', 'template': {'containers': [container],
             'scale': {'minReplicas': 1}}}}
 
@@ -70,6 +70,10 @@ class FakeRelease(module.Release):
         self.events.append(('smoke', host))
         if self.failure == host:
             raise module.ReleaseError('smoke failed')
+
+    def prepare_api(self, old_revision, location):
+        self.events.append(('prepare', old_revision))
+        self.traffic(old_revision)
 
     def traffic(self, revision):
         self.events.append(('traffic', revision))
@@ -199,6 +203,37 @@ class ReleaseTests(unittest.TestCase):
     def test_tag_only_image_is_rejected(self):
         with self.assertRaises(module.ReleaseError):
             module.Release('s', 'g', 'a', 'w', 'm', 'j', 'repo:latest', 'r-test')
+
+    def test_mode_and_traffic_patch_does_not_read_or_replace_secrets(self):
+        release = FakeRelease()
+        ready = copy.deepcopy(release.resources['api'])
+        ready['properties']['configuration']['activeRevisionsMode'] = 'Multiple'
+        with patch.object(release, 'show', return_value=ready), patch.object(release, 'az') as azure:
+            module.Release.prepare_api(release, 'api--old', 'southafricanorth')
+        args = azure.call_args.args
+        self.assertEqual(args[:3], ('rest', '--method', 'patch'))
+        self.assertIn('/resourceGroups/group/providers/Microsoft.App/containerApps/api?', args[args.index('--url') + 1])
+        self.assertEqual(json.loads(args[args.index('--body') + 1]), {
+            'location': 'southafricanorth', 'properties': {'configuration': {
+                'activeRevisionsMode': 'Multiple',
+                'ingress': {'traffic': [{'revisionName': 'api--old', 'weight': 100}]}}}})
+        self.assertEqual(azure.call_count, 1)
+
+    def test_rest_cli_scope_and_safe_error_diagnostics(self):
+        release = FakeRelease()
+        success = module.subprocess.CompletedProcess([], 0, '{}', '')
+        with patch.object(module.subprocess, 'run', return_value=success) as run:
+            module.Release.az(release, 'rest', '--method', 'get', '--url', 'https://management.azure.com/')
+            self.assertNotIn('--resource-group', run.call_args.args[0])
+            self.assertIn('--subscription', run.call_args.args[0])
+            module.Release.az(release, 'containerapp', 'show', '--name', 'api')
+            self.assertIn('--resource-group', run.call_args.args[0])
+        failure = module.subprocess.CompletedProcess([], 1, '',
+            'ERROR: (AuthorizationFailed) private diagnostic token=do-not-display')
+        with patch.object(module.subprocess, 'run', return_value=failure), self.assertRaises(module.ReleaseError) as caught:
+            module.Release.az(release, 'containerapp', 'show', '--name', 'api')
+        self.assertIn('AuthorizationFailed', str(caught.exception))
+        self.assertNotIn('do-not-display', str(caught.exception))
 
     def test_job_image_override_preserves_complete_execution_template(self):
         for name in ('migrate', 'schedule'):
