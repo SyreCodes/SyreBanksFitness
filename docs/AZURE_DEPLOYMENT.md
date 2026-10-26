@@ -16,6 +16,10 @@ The worker had an unintended web ingress configuration even though Celery does n
 
 `AZURE_DEPLOY_ENABLED=true` enables releases after all quality gates pass. The actual Azure release job must succeed before claiming a newer commit is deployed; a passing source check is insufficient. Do not recreate resources, rerun bootstrap, import demo data or run the production seed.
 
+On 26 October, the full automatic release of `c993b344a9c09055ae0694fa289e5953ae81f3af` succeeded in [run 40242198906, attempt 2](https://github.com/SyreCodes/SyreBanksFitness/actions/runs/40242198906). The promoted API receives all traffic; custom-domain administrator sessions, worker ping and scheduled executions passed after release. Later changes still require their own successful release result.
+
+The owner chose to retain current hosting sizes and defer paid upgrades. [Capacity measurements and limits](CAPACITY.md) record a passing local 1,500-user test across four processes and a failed single-process test. Current Azure capacity is not certified for that load.
+
 ## Resources and access
 
 Subscription `686467b0-6295-4d5d-8fb6-d06fd003bde3`, tenant `53e15a06-0e85-4291-8864-7725106b0be2`, group `rg-syrebanks-prod`, region `southafricanorth`.
@@ -68,7 +72,7 @@ az postgres flexible-server show -g rg-syrebanks-prod -n pg-syrebanks-686467b0 -
 
 Expected: `Ready`, `Disabled`.
 
-**Known availability issue:** the activity log shows the same service identity from another tenant stopped PostgreSQL at approximately 22:08 UTC on both 23 and 24 October 2026 (shortly after midnight in Kigali). Restarting the existing server restored database access. This repeated timing suggests scheduled automation, but that schedule has not been independently identified. The caller was `da847d8c-ee71-44de-b462-6775e7d649a7`, application `a1a9c5b6-7a4f-4288-89ab-6805873f65d1`. The schedule and operator have not been identified. The subscription administrator must establish why it happened and whether this subscription can provide continuous production availability. Do not disable organization policies or automation without authorization.
+**Known availability issue:** the application `MCAPSGovernance-AutomationApp` (app ID `a1a9c5b6-7a4f-4288-89ab-6805873f65d1`) appears in the PostgreSQL stops shortly after midnight Kigali time on 24 and 25 October, and a successful subscription cancellation on 25 October at 19:20:54 UTC. The cancellation's local service principal is `f38442cd-e824-46d9-9be8-f1da19029bb0`; the earlier database events used a different tenant's principal for the same application. It inherits Owner at the tenant root management group. The owner reactivated the subscription and hosting recovered on 26 October. The triggering governance rule and any human initiator are not shown by these records. Request an approved continuous-production exception from the MCAPS governance owner, or use an appropriate production subscription. No governance assignments were removed. Restarting services and a successful deployment do not prevent a future cancellation.
 
 If PostgreSQL is `Stopped`, resume the existing server:
 
