@@ -7,7 +7,7 @@ from redis.exceptions import RedisError
 from sqlalchemy import select, text
 
 from app.core.config import get_settings
-from app.core.database import engine
+from app.core.database import database_lifespan, engine
 from app.core.exceptions import AppError, install_errors
 from app.core.logging import configure_logging, install_request_logging
 from app.core.ratelimit import limiter
@@ -27,7 +27,7 @@ from app.modules.scheduling.routes import router as scheduling_router
 
 configure_logging()
 settings = get_settings()
-app = FastAPI(title="Syre Banks Fitness API", version="0.1.0", description="Versioned fitness coaching API. Bearer authentication and server-side ownership permissions.")
+app = FastAPI(lifespan=database_lifespan, title="Syre Banks Fitness API", version="0.1.0", description="Versioned fitness coaching API. Bearer authentication and server-side ownership permissions.")
 app.add_middleware(CORSMiddleware, allow_origins=settings.origins, allow_credentials=True,
                    allow_methods=["GET", "HEAD", "POST", "PATCH", "DELETE"],
                    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "Idempotency-Key"],

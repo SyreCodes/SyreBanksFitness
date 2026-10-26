@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.exceptions import HTTPException
 
 logger = logging.getLogger("sbf.errors")
@@ -26,6 +27,14 @@ def install_errors(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def app_error(request: Request, error: AppError) -> JSONResponse:
         return response(request, error.status, error.code, error.message, error.details)
+
+    @app.exception_handler(PoolTimeout)
+    async def database_busy(request: Request, error: PoolTimeout) -> JSONResponse:
+        # A full connection pool is temporary capacity pressure, not a broken
+        # request. Do not expose connection strings or SQL in the response.
+        result = response(request, 503, "DATABASE_BUSY", "The service is busy. Please try again shortly.")
+        result.headers["Retry-After"] = "5"
+        return result
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException) -> JSONResponse:

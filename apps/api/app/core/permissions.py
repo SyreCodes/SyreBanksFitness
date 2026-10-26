@@ -16,7 +16,7 @@ ADMIN_ROLES = {"SUPER_ADMIN", "ADMIN"}
 STAFF_ROLES = ADMIN_ROLES | {"COACH"}
 
 
-def current_user(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)], db: Annotated[Session, Depends(get_db)]) -> User:
+def current_user(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)], db: Annotated[Session, Depends(get_db, scope="function")]) -> User:
     if not credentials:
         raise AppError(401, "UNAUTHENTICATED", "Please sign in to continue")
     try:
@@ -29,11 +29,11 @@ def current_user(credentials: Annotated[HTTPAuthorizationCredentials | None, Dep
     return user
 
 
-def optional_user(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)], db: Annotated[Session, Depends(get_db)]) -> User | None:
+def optional_user(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)], db: Annotated[Session, Depends(get_db, scope="function")]) -> User | None:
     return current_user(credentials, db) if credentials else None
 
 
-DB = Annotated[Session, Depends(get_db)]
+DB = Annotated[Session, Depends(get_db, scope="function")]
 Identity = Annotated[User, Depends(current_user)]
 OptionalIdentity = Annotated[User | None, Depends(optional_user)]
 

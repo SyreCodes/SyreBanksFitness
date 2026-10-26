@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file="../../.env", extra="ignore")
     environment: str = "development"
     database_url: str = "sqlite:///./fitness-local.db"
+    # Each process/replica owns its own pool; keep overflow bounded when scaling.
+    database_pool_size: int = Field(default=3, ge=1, le=100)
+    database_max_overflow: int = Field(default=0, ge=0, le=100)
+    database_pool_timeout: float = Field(default=5, gt=0, le=120)
+    database_pool_recycle: int = Field(default=300, ge=30, le=3600)
+    database_connect_timeout: int = Field(default=5, ge=1, le=60)
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "local-development-only-change-before-deployment-2026"
     access_token_minutes: int = 15

@@ -52,7 +52,7 @@ jobs:
       - run: pip install -e 'apps/api[dev]'
       - name: Test Azure release failure handling
         run: python -m unittest discover -s scripts/azure/tests -v
-      - run: ruff check apps/api scripts/azure
+      - run: ruff check apps/api scripts/azure scripts/load
       - run: mypy app
         working-directory: apps/api
       - run: alembic upgrade head
