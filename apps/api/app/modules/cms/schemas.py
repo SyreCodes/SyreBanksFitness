@@ -37,6 +37,11 @@ class SettingsPatch(BaseModel):
     hero_image_caption: str | None = Field(default=None, max_length=300)
     about_heading: str | None = Field(default=None, max_length=300)
     about_bio: str | None = Field(default=None, max_length=10000)
+    fitness_journey: str | None = Field(default=None, max_length=10000)
+    qualifications: str | None = Field(default=None, max_length=10000)
+    training_methodology: str | None = Field(default=None, max_length=10000)
+    why_we_coach: str | None = Field(default=None, max_length=10000)
+    client_expectations: str | None = Field(default=None, max_length=10000)
     about_image_url: HttpUrl | None = None
     coaching_philosophy: str | None = Field(default=None, max_length=10000)
     contact_email: str | None = Field(default=None, max_length=254)

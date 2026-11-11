@@ -9,6 +9,7 @@ from app.core.database import Base, Record
 
 class Lead(Record, Base):
     __tablename__ = "leads"
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(254), index=True)
     phone: Mapped[str] = mapped_column(String(40), default="")

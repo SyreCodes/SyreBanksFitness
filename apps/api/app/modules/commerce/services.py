@@ -12,7 +12,7 @@ from app.core.exceptions import AppError
 from app.core.permissions import ADMIN_ROLES, client_scope, require_admin, scoped
 from app.core.repository import audit, paginate, persist, require_record, serialize
 from app.modules.auth.models import EmailOutbox, User
-from app.modules.commerce.models import Invoice, Order, Payment, Product, Subscription
+from app.modules.commerce.models import Invoice, Order, Payment, Product, ProductPrice, Subscription
 from app.modules.commerce.schemas import ProductInput, ProductPatch
 from app.modules.experience.models import Notification
 from app.providers.email import deliver_outbox
@@ -26,8 +26,11 @@ class CommerceService:
     def products(self, user: User | None, limit: int, offset: int) -> dict:
         stmt = select(Product)
         if not user or user.role not in ADMIN_ROLES:
-            stmt = stmt.where(Product.active.is_(True))
+            stmt = stmt.where(Product.active.is_(True), Product.status == "PUBLISHED", Product.visibility == "PUBLIC", Product.type != "DIGITAL")
         result = paginate(self.db, stmt.order_by(Product.price_minor), limit, offset)
+        if not user or user.role not in ADMIN_ROLES:
+            public_fields = {'id', 'name', 'description', 'price_minor', 'currency', 'billing_interval', 'features', 'entitlements', 'active'}
+            result['items'] = [{key: value for key, value in item.items() if key in public_fields} for item in result['items']]
         for item in result["items"]:
             item["price"] = item["price_minor"] / CURRENCY_FACTORS[item["currency"]]
         return result
@@ -41,6 +44,20 @@ class CommerceService:
         product = require_record(self.db, Product, product_id)
         for key, value in data.model_dump(exclude_unset=True, exclude_none=True).items():
             setattr(product, key, value)
+        # Keep the existing product editor and the new independent-price catalog
+        # in agreement without changing another currency's commercial offer.
+        if any(field in data.model_fields_set for field in ('price_minor', 'currency', 'billing_interval')):
+            for old_price in self.db.scalars(select(ProductPrice).where(ProductPrice.product_id == product.id,
+                                        ProductPrice.currency == product.currency, ProductPrice.active.is_(True))):
+                if old_price.pricing_type != product.billing_interval:
+                    old_price.active = False
+            price = self.db.scalar(select(ProductPrice).where(ProductPrice.product_id == product.id,
+                                   ProductPrice.currency == product.currency, ProductPrice.pricing_type == product.billing_interval,
+                                   ProductPrice.country_code == ''))
+            if not price:
+                price = ProductPrice(product_id=product.id, currency=product.currency, pricing_type=product.billing_interval)
+            price.amount_minor, price.active = product.price_minor, True
+            self.db.add(price)
         return persist(self.db, product, user.id, "product.updated")
 
     def order(self, product_id: str, user: User) -> dict:

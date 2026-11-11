@@ -114,6 +114,7 @@ export function ExerciseEditor({ exercise, onClose, onSaved }: Props) {
       description: String(fields.get('description') ?? '').trim(),
       instructions: String(fields.get('instructions') ?? '').trim(),
       coach_cues: String(fields.get('coach_cues') ?? '').split('\n').map(value => value.trim()).filter(Boolean),
+      ...Object.fromEntries(['variations','regressions','progressions'].map(key => [key, String(fields.get(key) ?? '').split('\n').map(value => value.trim()).filter(Boolean)])),
       media_url: file ? (saved?.media_url ?? null) : (mediaUrl.trim() || null),
       published: fields.get('published') === 'on',
     }
@@ -169,9 +170,10 @@ export function ExerciseEditor({ exercise, onClose, onSaved }: Props) {
       <Field label="Instructions"><textarea name="instructions" defaultValue={lines(exercise?.instructions)} maxLength={5000} rows={4} /></Field>
       <Field label="Coach cues (one per line)"><textarea name="coach_cues" defaultValue={lines(exercise?.coach_cues)} rows={3} /></Field>
 
+      {(['variations','regressions','progressions'] as const).map(key=><Field key={key} label={key === 'regressions' ? 'Easier alternatives (coach guidance)' : key === 'progressions' ? 'More challenging alternatives (coach guidance)' : 'Movement variations'} hint="One per line. State when each is appropriate; clients should confirm a change with you."><textarea name={key} defaultValue={lines(exercise?.[key])} rows={3}/></Field>)}
       <div className="exercise-video-panel">
         <h3>Demonstration video</h3>
-        {currentVideo && <div className="exercise-video-current"><p className="muted">Current demonstration</p>
+        {currentVideo && !file && !busy && <div className="exercise-video-current"><p className="muted">Current demonstration</p>
           {saved?.video_media_id ? <video controls playsInline preload="metadata" src={currentVideo} aria-label="Current exercise demonstration" /> : <a href={currentVideo} target="_blank" rel="noopener noreferrer">Watch current demonstration</a>}
           <Button type="button" variant="secondary" disabled={busy} onClick={() => fileInput.current?.click()}>Replace video</Button>
           {saved?.video_media_id && <Button type="button" variant="danger" disabled={busy} onClick={() => { void removeUploadedVideo() }}>Remove current video</Button>}
@@ -196,7 +198,7 @@ export function ExerciseEditor({ exercise, onClose, onSaved }: Props) {
         </div>}
         <Field label="Or use a video link" hint="A file upload replaces an existing link after it finishes successfully."><input type="url" value={mediaUrl} disabled={busy || Boolean(saved?.video_media_id)} onChange={event => { setMediaUrl(event.target.value); setDirty(true) }} placeholder="https://…" /></Field>
       </div>
-      <label className="checkbox-row"><input name="published" type="checkbox" defaultChecked={exercise?.published !== false} /> Publish to exercise library</label>
+      <label className="checkbox-row"><input name="published" type="checkbox" defaultChecked={exercise?.published !== false} /> Publish to the protected member exercise library</label>
       {error && <p className="form-error" role="alert">{error}</p>}
       {notice && <p className="notice" role="status">{notice}</p>}
       <div className="form-actions"><Button type="button" variant="secondary" disabled={busy} onClick={close}>Cancel</Button><Button disabled={busy || Boolean(selectedFileError)}>{saving ? 'Saving…' : exercise ? 'Save exercise' : 'Add exercise'}</Button></div>

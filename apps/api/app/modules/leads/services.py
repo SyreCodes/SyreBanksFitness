@@ -16,12 +16,12 @@ class LeadService:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, data: LeadCreate, request: Request) -> dict:
+    def create(self, data: LeadCreate, request: Request, user_id: str | None = None) -> dict:
         limiter.check(f"lead:{request.client.host if request.client else 'unknown'}", 5, 300)
         values = data.model_dump(exclude={"consent", "responses"})
         extras = {key: values.pop(key) for key in list(values) if key not in {"name", "email", "phone", "goal", "source", "consent_version"}}
         # Flat form fields are retained in the private application record.
-        lead = Lead(**values, responses={**data.responses, **extras})
+        lead = Lead(**values, user_id=user_id, responses={**data.responses, **extras})
         self.db.add(lead)
         self.db.flush()
         for admin in self.db.scalars(select(User).where(User.role.in_(ADMIN_ROLES), User.active.is_(True))).all():

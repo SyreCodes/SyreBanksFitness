@@ -1,27 +1,21 @@
+import { useState } from 'react';
+import { useCatalog, cleanText, goals } from '../launch/data';
+import { CurrencyControl, PackageTile, QueryState } from '../launch/components';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Check, Dumbbell, Flame, Target, TrendingUp, Sprout, Repeat2, ArrowRight } from 'lucide-react';
-import { ErrorState, Loading } from '../../components/ui';
-import { publicCopy, useProducts, usePublicContent, formatPrice, type Exercise } from './content';
+import { ArrowUpRight, Dumbbell, Flame, Target, TrendingUp, Sprout, Repeat2, ArrowRight } from 'lucide-react';
+import { publicCopy, usePublicContent, type Exercise } from './content';
 import { ExerciseDemonstration } from './ExerciseDemonstration';
 
 const goalIcons = [Dumbbell, Flame, TrendingUp, Target, Sprout, Repeat2];
-const entitlementNames: Record<string, string> = { program_access: 'Personalized program access', coach_messaging: 'Coach messaging', weekly_checkin: 'Weekly check-ins', form_review: 'Form review', nutrition_guidance: 'Nutrition guidance', exercise_library: 'Exercise library' };
+
 
 export function GoalCards({ limit }: { limit?: number }) {
-  return <div className="sb-goals-grid">{publicCopy.goals.slice(0, limit).map((goal, index) => { const Icon = goalIcons[index]; return <Link className="sb-goal-card" key={goal.name} to={`/apply?goal=${encodeURIComponent(goal.name)}`}><div className="sb-goal-top"><Icon size={27} strokeWidth={1.5} /><span>{goal.number}</span></div><h3>{goal.name}</h3><p>{goal.description}</p><span className="sb-goal-link">Find your direction <ArrowUpRight size={18} /></span></Link>; })}</div>;
+  return <div className="sb-goals-grid">{goals.slice(0, limit).map(([name, description], index) => { const Icon = goalIcons[index]; return <Link className="sb-goal-card" key={name} to={`/programs?goal=${encodeURIComponent(name)}`}><div className="sb-goal-top"><Icon size={27} strokeWidth={1.5} /><span>{String(index + 1).padStart(2, '0')}</span></div><h3>{name}</h3><p>{description}</p><span className="sb-goal-link">Find your direction <ArrowUpRight size={18} /></span></Link>; })}</div>;
 }
 
 export function PricingCards() {
-  const products = useProducts();
-  if (products.isPending) return <Loading label="Loading current coaching plans…" />;
-  if (products.isError) return <ErrorState error={products.error} retry={() => void products.refetch()} />;
-  if (!products.data.items.length) return <div className="sb-empty"><h3>Let's find the right plan for you.</h3><p>Published coaching plans will appear here. You can still send an application to discuss your goals.</p><Link className="sb-text-link" to="/apply">Start your application <ArrowUpRight size={18} /></Link></div>;
-  return <div className="sb-pricing-grid">{products.data.items.map((product, index) => {
-    const entitled = Object.entries(product.entitlements || {}).filter(([key, value]) => value === true && entitlementNames[key]).map(([key]) => entitlementNames[key]);
-    const features = product.features?.length ? product.features : entitled.length ? entitled : ['Plan details confirmed during consultation'];
-    const annual = product.billing_interval === 'year' || product.billing_interval === 'annual';
-    return <article className={`sb-price-card ${index === 0 ? 'sb-price-featured' : ''}`} key={product.id}><div className="sb-price-top"><span className="sb-kicker">{annual ? 'COMMIT TO YOUR NEXT CHAPTER' : 'BUILD YOUR MOMENTUM'}</span><span className="sb-price-tag">{annual ? 'Long-term focus' : 'Flexible commitment'}</span></div><h3>{product.name}</h3><p>{product.description}</p><div className="sb-price">{formatPrice(product)}<span> / {product.billing_interval === 'annual' ? 'year' : product.billing_interval === 'monthly' ? 'month' : product.billing_interval}</span></div><div className="sb-price-divider" /><ul>{features.map(feature => <li key={feature}><Check size={17} />{feature}</li>)}</ul><Link className={`sb-button ${index === 0 ? 'sb-button-lime' : 'sb-button-outline'}`} to={`/apply?plan=${encodeURIComponent(product.id)}`}>Apply for coaching <ArrowUpRight size={18} /></Link><small>Subject to assessment and coaching availability.</small></article>;
-  })}</div>;
+  const query = useCatalog(); const [currency, setCurrency] = useState('RWF');
+  return <><CurrencyControl value={currency} onChange={setCurrency}/><QueryState query={query}>{query.data?.items.filter(p => p.type !== 'DIGITAL').length ? <div className="launch-grid">{query.data.items.filter(p => p.type !== 'DIGITAL').slice(0,3).map(p => <PackageTile key={p.id} product={p} currency={currency}/>)}</div> : <div className="sb-empty"><h3>Let’s find the right support.</h3><p>Packages are being prepared. Tell us your goals and discuss your options.</p><Link className="sb-text-link" to="/apply?kind=CONSULTATION">Request a consultation <ArrowUpRight size={18}/></Link></div>}</QueryState></>;
 }
 
 export function ExerciseCards({ exercises }: { exercises: Exercise[] }) {
@@ -39,5 +33,5 @@ export function CallToAction() {
 }
 
 export function SectionHeading({ eyebrow, title, description, link, linkLabel }: { eyebrow: string; title: string; description?: string; link?: string; linkLabel?: string }) {
-  return <div className="sb-section-heading"><div><p className="sb-kicker">{eyebrow}</p><h2>{title}</h2>{description && <p className="sb-section-description">{description}</p>}</div>{link && <Link className="sb-text-link" to={link}>{linkLabel || 'Explore more'} <ArrowRight size={18} /></Link>}</div>;
+  return <div className="sb-section-heading"><div><p className="sb-kicker">{eyebrow}</p><h2 className="preserve-lines">{cleanText(title)}</h2>{description && <p className="sb-section-description">{description}</p>}</div>{link && <Link className="sb-text-link" to={link}>{linkLabel || 'Explore more'} <ArrowRight size={18} /></Link>}</div>;
 }

@@ -12,6 +12,7 @@ from tests.test_core_loop import auth, identity
 
 
 def test_authenticated_webhook_verifies_server_side_and_is_idempotent(client, db, monkeypatch):
+    monkeypatch.setattr(get_settings(), "live_payments_enabled", True)
     user = identity(db, name="Buyer")
     product = Product(name="Monthly", price_minor=10000, currency="USD", billing_interval="monthly", entitlements={"coach_messaging": True})
     db.add(product)

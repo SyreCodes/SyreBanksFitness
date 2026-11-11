@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     email_from: str = "syrefitness6@gmail.com"
     public_web_url: str = "http://localhost:5173"
+    live_payments_enabled: bool = False
     flutterwave_secret_key: str = ""
     flutterwave_webhook_secret: str = ""
     storage_provider: Literal["local", "s3", "azure"] = "local"

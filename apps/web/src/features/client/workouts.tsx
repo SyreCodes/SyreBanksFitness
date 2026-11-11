@@ -14,7 +14,7 @@ import type { LoggedSet } from './validation'
 
 type SetValue = LoggedSet & { completed: true }
 type WorkoutPayload = { assignment_id: string; workout_id: string; notes?: string; duration_minutes: number; sets: SetValue[]; completed: true }
-type ExerciseDemo = { id: string; video_url?: string; video_media_id?: string | null }
+type ExerciseDemo = { id: string; video_url?: string; video_media_id?: string | null; instructions?: string; coach_cues?: string[]; variations?: string[]; regressions?: string[]; progressions?: string[] }
 
 async function loadExerciseDemonstrations(exerciseIds: string[]): Promise<Record<string, ExerciseDemo>> {
   const needed = new Set(exerciseIds)
@@ -49,11 +49,14 @@ function SetRow({ exercise, number, saved, onLog }: { exercise: Prescription; nu
 
 function WorkoutLogger({ assignment, workout, onClose }: { assignment: Assignment; workout: Workout; onClose: () => void }) {
   const { user } = useAuth()
+  const history = useClientQuery<Page<WorkoutSession>>(clientKeys.sessions, '/workouts/sessions?limit=100')
   const exerciseIds = workout.exercises.map(exercise => exercise.exercise_id)
   const demonstrations = useQuery({
     queryKey: ['client', 'exercise-demonstrations', ...[...exerciseIds].sort()],
     queryFn: () => loadExerciseDemonstrations(exerciseIds),
     enabled: exerciseIds.length > 0,
+    // Renew private links before their five-minute lifetime during longer workouts.
+    refetchInterval: 240_000,
   })
   const storageKey = `sbf:workout:${user?.id}:${assignment.id}:${workout.id}`
   const [sets, setSets] = useState<Record<string, SetValue>>(() => { try { return JSON.parse(sessionStorage.getItem(storageKey) ?? '{}') as Record<string, SetValue> } catch { return {} } })
@@ -63,28 +66,30 @@ function WorkoutLogger({ assignment, workout, onClose }: { assignment: Assignmen
   const [restDefault, setRestDefault] = useState(60)
   const [running, setRunning] = useState(false)
   const save = useClientMutation<WorkoutPayload, WorkoutSession>('/workouts/sessions', { keys: [clientKeys.sessions] })
-  useEffect(() => { sessionStorage.setItem(storageKey, JSON.stringify(sets)) }, [sets, storageKey])
+  useEffect(() => { try { sessionStorage.setItem(storageKey, JSON.stringify(sets)) } catch { /* The active workout still works without storage. */ } }, [sets, storageKey])
   useEffect(() => { if (!running || rest <= 0) return; const interval = window.setInterval(() => setRest(value => Math.max(0, value - 1)), 1000); return () => window.clearInterval(interval) }, [running, rest])
   function logSet(exercise: Prescription, number: number, set?: SetValue) {
     const key = `${exercise.exercise_id}:${number}`
     setSets(current => { const next = { ...current }; if (set) next[key] = set; else delete next[key]; return next })
     if (set) { const duration = exercise.rest_seconds ?? 60; setRestDefault(duration); setRest(duration); setRunning(true) }
   }
-  function finish() { save.mutate({ assignment_id: assignment.id, workout_id: workout.id, sets: Object.values(sets), completed: true, notes, duration_minutes: Math.max(1, Math.round((Date.now() - startedAt) / 60000)) }, { onSuccess: () => { sessionStorage.removeItem(storageKey); setSets({}) } }) }
-  if (save.isSuccess) return <ClientCard><ClientEmpty title="Session complete. Good work." description="Your workout and logged sets are saved. Your coach can review your results." action={<button className="client-button" onClick={onClose}><Trophy size={17} />Back to your plan</button>} /></ClientCard>
+  function finish() { save.mutate({ assignment_id: assignment.id, workout_id: workout.id, sets: Object.values(sets), completed: true, notes, duration_minutes: Math.max(1, Math.round((Date.now() - startedAt) / 60000)) }, { onSuccess: () => { try { sessionStorage.removeItem(storageKey) } catch { /* Nothing to clear. */ } } }) }
+  if (save.isSuccess) return <ClientCard><ClientEmpty title="Session complete. Good work." description={`Saved ${save.data.sets.length} sets across ${new Set(save.data.sets.map(s => s.exercise_id)).size} movements in ${save.data.duration_minutes || 1} minutes. Your coach can review your notes and results.`} action={<button className="client-button" onClick={onClose}><Trophy size={17} />Back to your plan</button>} /></ClientCard>
   const prescribed = workout.exercises.reduce((total, exercise) => total + exercise.sets, 0)
-  return <ClientCard><SectionHeading title={workout.name} detail={`${assignment.snapshot.name} · ${Object.keys(sets).length} / ${prescribed} sets logged`} /><ClientNotice>Check off each set after you perform it. Your checked sets are saved to your coach when you finish this session.</ClientNotice><RestTimer seconds={rest} running={running && rest > 0} onPause={() => setRunning(value => !value)} onReset={() => { setRest(restDefault); setRunning(true) }} />{workout.exercises.map(exercise => {
+  return <ClientCard><SectionHeading title={workout.name} detail={`${assignment.snapshot.name} · ${Object.keys(sets).length} / ${prescribed} sets logged`} /><ClientNotice>Check off each set after you perform it. Your checked sets are saved to your coach when you finish this session.</ClientNotice>{demonstrations.isError && <ClientNotice danger>Demonstrations could not load. Your access may have changed; refresh your plan or contact your coach.</ClientNotice>}<RestTimer seconds={rest} running={running && rest > 0} onPause={() => setRunning(value => !value)} onReset={() => { setRest(restDefault); setRunning(true) }} />{workout.exercises.map(exercise => {
     const demonstration = demonstrations.data?.[exercise.exercise_id]
-    const videoUrl = demonstration?.video_url || exercise.video_url
-    const videoMediaId = demonstration?.video_media_id || exercise.video_media_id
-    return <div className="client-exercise" key={exercise.exercise_id}><div className="client-exercise-heading"><div><h3>{exercise.name}</h3><p>{exercise.sets} sets × {exercise.reps} reps · {exercise.rest_seconds ?? 60}s rest{exercise.notes ? ` · ${exercise.notes}` : ''}</p></div><Dumbbell size={19} color="#91a46f" /></div>{videoUrl && <ExerciseDemonstration name={exercise.name} videoUrl={videoUrl} videoMediaId={videoMediaId} linkClassName="client-button secondary small" linkText="Watch demonstration" />}<div className="client-set-row client-set-labels"><span>SET</span><span>REPS</span><span>KG</span><span>RPE</span><span>DONE</span></div>{Array.from({ length: exercise.sets }, (_, index) => <SetRow key={index} number={index + 1} exercise={exercise} saved={sets[`${exercise.exercise_id}:${index + 1}`]} onLog={set => logSet(exercise, index + 1, set)} />)}</div>
+    const previous = history.data?.items.filter(s => s.completed && s.sets.some(set => set.exercise_id === exercise.exercise_id)).sort((a,b) => b.created_at.localeCompare(a.created_at))[0]
+    const previousSets = previous?.sets.filter(set => set.exercise_id === exercise.exercise_id && set.completed) || []
+    const videoUrl = demonstration?.video_url
+    const videoMediaId = demonstration?.video_media_id
+    return <div className="client-exercise" key={exercise.exercise_id}><div className="client-exercise-heading"><div><h3>{exercise.name}</h3><p>{exercise.sets} sets × {exercise.reps} reps · {exercise.rest_seconds ?? 60}s rest{exercise.weight_kg != null ? ` · ${exercise.weight_kg} kg prescribed` : ''}{exercise.notes ? ` · ${exercise.notes}` : ''}</p></div><Dumbbell size={19} color="#91a46f" /></div>{videoUrl && <ExerciseDemonstration name={exercise.name} videoUrl={videoUrl} videoMediaId={videoMediaId} linkClassName="client-button secondary small" linkText="Watch demonstration" />}{previous && <p className="launch-previous">Last time · {formatDate(previous.created_at)}: {previousSets.map(s => `${s.reps} reps at ${s.weight_kg ?? 0} kg`).join(' · ')}</p>}{demonstration?.instructions && <details className="launch-workout-details"><summary>Movement instructions</summary><p className="preserve-lines">{demonstration.instructions}</p>{demonstration.coach_cues?.map(c => <p key={c}>{c}</p>)}</details>}{demonstration && [...(demonstration.variations||[]),...(demonstration.regressions||[]),...(demonstration.progressions||[])].length > 0 && <details className="launch-workout-details"><summary>Coach’s movement alternatives</summary><p>Confirm a suitable alternative with your coach before changing your plan. Stop if a movement causes pain.</p>{[['Variations',demonstration.variations],['Easier options',demonstration.regressions],['Progressions',demonstration.progressions]].map(([title,values])=>Array.isArray(values)&&values.length>0&&<div key={String(title)}><strong>{title}</strong><ul>{values.map(v=><li key={v}>{v}</li>)}</ul></div>)}</details>}<div className="client-set-row client-set-labels"><span>SET</span><span>REPS</span><span>KG</span><span>RPE</span><span>DONE</span></div>{Array.from({ length: exercise.sets }, (_, index) => <SetRow key={index} number={index + 1} exercise={exercise} saved={sets[`${exercise.exercise_id}:${index + 1}`]} onLog={set => logSet(exercise, index + 1, set)} />)}</div>
   })}<label className="client-field" style={{ margin: '20px 0' }}><span>Session notes</span><textarea value={notes} onChange={event => setNotes(event.target.value)} maxLength={3000} placeholder="How did it feel? Anything your coach should know?" /></label>{save.isError && <ClientNotice danger>{save.error.message}</ClientNotice>}<div className="client-form-actions"><button className="client-button" disabled={save.isPending || !Object.keys(sets).length} onClick={finish}>{save.isPending ? 'Saving session…' : 'Finish & save session'}<Check size={16} /></button><button className="client-button secondary" disabled={save.isPending} onClick={onClose}>Back to plan</button></div><p className="client-onboarding-subtitle" style={{ marginTop: 12 }}>Only checked sets are included. You can skip movements and explain why in your notes.</p></ClientCard>
 }
 
 export function WorkoutsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const assignments = useClientQuery<Page<Assignment>>(clientKeys.assignments, '/programs/assignments')
-  const sessions = useClientQuery<Page<WorkoutSession>>(clientKeys.sessions, '/workouts/sessions')
+  const sessions = useClientQuery<Page<WorkoutSession>>(clientKeys.sessions, '/workouts/sessions?limit=100')
   const [selection, setSelection] = useState<{ assignment: string; workout: string } | null>(null)
   const selected = selection ?? (searchParams.get('workout') && searchParams.get('assignment') ? { assignment: searchParams.get('assignment')!, workout: searchParams.get('workout')! } : null)
   const assignment = assignments.data?.items.find(item => item.id === selected?.assignment)

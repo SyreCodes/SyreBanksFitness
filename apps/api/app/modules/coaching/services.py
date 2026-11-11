@@ -23,6 +23,8 @@ from app.modules.cms.services import CMSService
 from app.modules.coaching.models import Exercise, Measurement, Program, ProgramAssignment, WorkoutSession
 from app.modules.coaching.schemas import ExerciseCreate, ProgramCreate, ProgressCreate, SessionCreate
 from app.modules.coaching.video import VIDEO_TYPES, ValidatedVideo, validate_video
+from app.modules.commerce.entitlements import EntitlementService
+from app.modules.launch.services import program_output
 from app.providers.storage import storage_provider
 
 logger = logging.getLogger(__name__)
@@ -34,25 +36,37 @@ class CoachingService:
 
     def templates(self, model, user: User | None, limit: int, offset: int) -> dict:
         statement = select(model)
-        if user is None or user.role not in ADMIN_ROLES | {"COACH"}:
+        access = EntitlementService(self.db)
+        staff = user and user.role in ADMIN_ROLES | {"COACH"}
+        if model is Exercise and not staff:
+            if not user:
+                raise AppError(401, "MEMBER_ACCESS_REQUIRED", "Sign in to access your training")
+            ids, library = access.exercise_policy(user.id)
+            if library:
+                statement = statement.where(Exercise.published.is_(True) | Exercise.id.in_(ids))
+            elif ids:
+                statement = statement.where(Exercise.id.in_(ids))
+            else:
+                raise AppError(403, 'ENTITLEMENT_REQUIRED', 'Your coach has not granted exercise access yet')
+        elif not staff:
             statement = statement.where(model.published.is_(True))
-        elif user.role == "COACH":
+        elif user and user.role == "COACH":
             statement = statement.where(model.published.is_(True) | (model.owner_id == user.id))
         result = paginate(self.db, statement.order_by(model.created_at.desc()), limit, offset)
         if model is Exercise:
-            result["items"] = [self.exercise_output(require_record(self.db, Exercise, item["id"]), user) for item in result["items"]]
+            result['items'] = [self.exercise_output(require_record(self.db, Exercise, item['id']), user, access=access) for item in result['items']]
+        elif not staff:
+            result['items'] = [program_output(self.db, require_record(self.db, Program, item['id'])) for item in result['items']]
         return result
 
-    def exercise_output(self, exercise: Exercise, user: User | None) -> dict:
+    def exercise_output(self, exercise: Exercise, user: User | None, *, access: EntitlementService | None = None) -> dict:
+        (access or EntitlementService(self.db)).require_exercise(user, exercise)
         values = serialize(exercise)
-        values["video_url"] = values["media_url"]
-        if exercise.video_media_id:
+        values['video_url'] = values['media_url']
+        if exercise.video_media_id and user:
             asset = self.db.get(MediaAsset, exercise.video_media_id)
-            if asset and asset.purpose == "exercise" and asset.content_type in VIDEO_TYPES:
-                if exercise.published and asset.public:
-                    values["video_url"] = f"/api/v1/media/{asset.id}/file"
-                elif user and not asset.public:
-                    values["video_url"] = CMSService(self.db).media_output(asset, user)["url"]
+            if asset and asset.purpose == 'exercise' and asset.content_type in VIDEO_TYPES:
+                values['video_url'] = CMSService(self.db).media_output(asset, user)['url']
         return values
 
     def editable_exercise(self, exercise_id: str, user: User) -> Exercise:
@@ -133,7 +147,7 @@ class CoachingService:
             try:
                 asset = MediaAsset(owner_id=exercise.owner_id, storage_key=key, content_type=video.content_type,
                                    size=video.size, caption=f"{exercise.name} demonstration"[:300],
-                                   purpose="exercise", public=exercise.published,
+                                   purpose="exercise", public=False,
                                    upload_id=idempotency_key, upload_sha256=video.sha256)
                 self.db.add(asset)
                 self.db.flush()
@@ -220,13 +234,23 @@ class CoachingService:
         return persist(self.db, ProgramAssignment(client_id=client_id, program_id=program_id, assigned_by=user.id, snapshot=snapshot), user.id, "program.assigned")
 
     def assignments(self, user: User, client_id: str | None, limit: int, offset: int) -> dict:
-        return paginate(self.db, scoped(self.db, user, select(ProgramAssignment), ProgramAssignment.client_id, client_id).order_by(ProgramAssignment.created_at.desc()), limit, offset)
+        page = paginate(self.db, scoped(self.db, user, select(ProgramAssignment), ProgramAssignment.client_id, client_id).order_by(ProgramAssignment.created_at.desc()), limit, offset)
+        if user.role == 'CLIENT':
+            access = EntitlementService(self.db)
+            for item in page['items']:
+                if not access.assignment_active(require_record(self.db, ProgramAssignment, item['id'])):
+                    item['status'] = 'ACCESS_ENDED'
+                    item['snapshot'] = {key: value for key, value in item['snapshot'].items() if key in {'id', 'name', 'goal', 'description'}}
+                    item['snapshot']['workouts'] = []
+        return page
 
     def log_session(self, data: SessionCreate, user: User) -> dict:
         assignment = require_record(self.db, ProgramAssignment, data.assignment_id)
         client_scope(self.db, user, assignment.client_id)
         if user.id != assignment.client_id:
             raise AppError(403, "CLIENT_ACTION_REQUIRED", "Only the client can log their workout")
+        if not EntitlementService(self.db).assignment_active(assignment):
+            raise AppError(403, 'ENTITLEMENT_REQUIRED', 'This program access has ended')
         workouts = {workout["id"]: workout for workout in assignment.snapshot.get("workouts", [])}
         if data.workout_id not in workouts:
             raise AppError(422, "INVALID_WORKOUT", "Select a workout from your assigned program")
@@ -257,7 +281,7 @@ class CoachingService:
         if exercise.video_media_id:
             asset = self.db.get(MediaAsset, exercise.video_media_id)
             if asset and asset.purpose == "exercise":
-                asset.public = exercise.published
+                asset.public = False
         persist(self.db, exercise, user.id, "exercise.updated")
         if previous_key:
             self.delete_storage(previous_key)

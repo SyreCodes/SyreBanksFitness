@@ -9,6 +9,7 @@ import type { ListResult } from '../services/api';
 import { Button, Modal, EmptyState } from '../components/ui';
 import copy from '../locales/en.json';
 
+import { ThemeControl } from '../features/theme/Theme';
 type NavItem = { path: string; label: string; icon: LucideIcon };
 const adminMain: NavItem[] = [
   { path: '/admin', label: copy.navigation.overview, icon: LayoutDashboard },
@@ -22,6 +23,7 @@ const adminMain: NavItem[] = [
   { path: '/admin/calendar', label: copy.navigation.calendar, icon: CalendarDays },
 ];
 const adminBusiness: NavItem[] = [
+  { path: '/admin/launch', label: 'Offers & access', icon: BookOpen },
   { path: '/admin/payments', label: copy.navigation.payments, icon: CreditCard },
   { path: '/admin/content', label: copy.navigation.content, icon: FileText },
   { path: '/admin/feedback', label: 'Feedback & ideas', icon: Lightbulb },
@@ -29,7 +31,9 @@ const adminBusiness: NavItem[] = [
   { path: '/admin/audit', label: copy.navigation.audit, icon: ShieldCheck },
 ];
 const clientMain: NavItem[] = [
-  { path: '/app', label: 'My overview', icon: LayoutDashboard },
+  { path: '/app/discover', label: 'Discover', icon: Search },
+  { path: '/app/profile', label: 'My profile', icon: Users },
+  { path: '/app', label: 'Home', icon: LayoutDashboard },
   { path: '/app/workouts', label: 'My workouts', icon: Dumbbell },
   { path: '/app/programs', label: 'My program', icon: BookOpen },
   { path: '/app/progress', label: 'My progress', icon: Activity },
@@ -64,14 +68,15 @@ export function AppShell({ mode }: { mode: 'admin' | 'client' }) {
       <Link to="/" className="sidebar-brand"><div className="brand-mark">S</div><div className="brand-name">SYRE BANKS<small>FITNESS</small></div></Link>
       <p className="sidebar-section-label">{mode === 'admin' ? 'Coaching workspace' : 'Your training'}</p>{renderNav(main)}
       {mode === 'admin' && business.length > 0 && <><p className="sidebar-section-label">Business</p>{renderNav(business)}</>}
-      <div className="sidebar-bottom">{(mode === 'client' || user?.role !== 'COACH') && <NavLink to={mode === 'admin' ? '/admin/settings' : '/app/onboarding'} className="nav-item"><Settings size={18}/>{mode === 'admin' ? 'Settings' : 'My profile'}</NavLink>}<Link to="/contact" className="nav-item"><CircleHelp size={18}/>Help & support</Link><div className="coach-profile"><div className="avatar avatar-lime">{initials}</div><div className="profile-info"><strong>{user?.name}</strong><small>{mode === 'admin' ? 'Coach account' : 'Client account'}</small></div><button className="profile-more" aria-label="Account options" onClick={() => setProfileOpen(true)}><Ellipsis size={19}/></button></div></div>
+      <div className="sidebar-bottom">{(mode === 'client' || user?.role !== 'COACH') && <NavLink to={mode === 'admin' ? '/admin/settings' : '/app/profile'} className="nav-item"><Settings size={18}/>{mode === 'admin' ? 'Settings' : 'My profile'}</NavLink>}<Link to="/contact" className="nav-item"><CircleHelp size={18}/>Help & support</Link><div className="coach-profile"><div className="avatar avatar-lime">{initials}</div><div className="profile-info"><strong>{user?.name}</strong><small>{mode === 'admin' ? 'Coach account' : 'Client account'}</small></div><button className="profile-more" aria-label="Account options" onClick={() => setProfileOpen(true)}><Ellipsis size={19}/></button></div></div>
     </aside>
     <div className="workspace">
-      <header className="topbar"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={20}/></button><div className="breadcrumb"><span>{mode === 'admin' ? 'Workspace' : 'My coaching'}</span><span>/</span><b>{current}</b></div><div className="topbar-right">{mode === 'admin' && <form className="global-search" onSubmit={e => { e.preventDefault(); navigate(`/admin/clients?q=${encodeURIComponent(search)}`); }}><Search size={16}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients…" aria-label="Search clients"/><kbd>↵</kbd></form>}<span className="topbar-date"><CalendarDays size={14}/>{today}</span><button className="icon-button" aria-label="Notifications" onClick={() => setNotificationOpen(true)}><Bell size={18}/>{notifications.data?.items.some(item => !item.read) && <span className="notification-dot"/>}</button><button className="avatar avatar-lime" aria-label="Account menu" style={{border:0}} onClick={() => setProfileOpen(true)}>{initials}</button></div></header>
+      <header className="topbar"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={20}/></button><div className="breadcrumb"><span>{mode === 'admin' ? 'Workspace' : 'My coaching'}</span><span>/</span><b>{current}</b></div><div className="topbar-right"><ThemeControl/>{mode === 'admin' && <form className="global-search" onSubmit={e => { e.preventDefault(); navigate(`/admin/clients?q=${encodeURIComponent(search)}`); }}><Search size={16}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients…" aria-label="Search clients"/><kbd>↵</kbd></form>}<span className="topbar-date"><CalendarDays size={14}/>{today}</span><button className="icon-button" aria-label="Notifications" onClick={() => setNotificationOpen(true)}><Bell size={18}/>{notifications.data?.items.some(item => !item.read) && <span className="notification-dot"/>}</button><button className="avatar avatar-lime" aria-label="Account menu" style={{border:0}} onClick={() => setProfileOpen(true)}>{initials}</button></div></header>
       {import.meta.env.VITE_DEMO_MODE === 'true' && <div className="demo-label">Development workspace · seeded records are illustrative</div>}
       <main className="workspace-main"><Outlet/></main>
     </div>
+    {mode === 'client' && <nav className="client-bottom-nav" aria-label="Member navigation">{([{path:'/app',label:'Home',icon:LayoutDashboard},{path:'/app/discover',label:'Discover',icon:Search},{path:'/app/workouts',label:'My Plan',icon:Dumbbell},{path:'/app/progress',label:'Progress',icon:Activity},{path:'/app/profile',label:'Profile',icon:Users}]).map(({path,label,icon:Icon})=><NavLink key={path} to={path} end={path==='/app'}><Icon size={21}/><span>{label}</span></NavLink>)}</nav>}
     {notificationOpen && <Modal title="Your notifications" onClose={() => setNotificationOpen(false)}>{notifications.data?.items.length ? <><div className="stack">{notifications.data.items.map(item => <button className={'notification-item ' + (item.read ? '' : 'unread')} key={item.id} onClick={async () => { await markNotificationsRead([item.id]); setNotificationOpen(false); if (item.link) navigate(item.link); }}><strong>{item.title}</strong><p className="muted">{item.body}</p><small className="muted">{new Date(item.created_at).toLocaleString('en-GB',{timeZone:user?.timezone || 'Africa/Kigali'})}</small></button>)}</div>{notifications.data.items.some(item => !item.read) && <div className="form-actions"><Button variant="secondary" onClick={() => { void markNotificationsRead(notifications.data!.items.filter(item => !item.read).map(item => item.id)); }}>Mark all as read</Button></div>}</> : <EmptyState title="You're all caught up" description="New messages and coaching reminders will appear here."/>}</Modal>}
-    {profileOpen && <Modal title="Your account" onClose={() => setProfileOpen(false)}><div className="name-cell"><div className="avatar avatar-lime">{initials}</div><div><strong>{user?.name}</strong><small>{user?.email}</small></div></div><div className="stack" style={{marginTop:24}}><Link className="button button-secondary" to="/" onClick={() => setProfileOpen(false)}>View public website <ChevronDown size={15}/></Link><button className="button button-secondary" onClick={async () => { setProfileOpen(false); await logout(); navigate('/login'); }}><LogOut size={16}/>Sign out</button><button className="button button-ghost" onClick={() => setProfileOpen(false)}><X size={16}/>Close</button></div></Modal>}
+    {profileOpen && <Modal title="Your account" onClose={() => setProfileOpen(false)}><div className="name-cell"><div className="avatar avatar-lime">{initials}</div><div><strong>{user?.name}</strong><small>{user?.email}</small></div></div><div className="stack" style={{marginTop:24}}><ThemeControl label="Account appearance"/><Link className="button button-secondary" to="/" onClick={() => setProfileOpen(false)}>View public website <ChevronDown size={15}/></Link><button className="button button-secondary" onClick={async () => { setProfileOpen(false); await logout(); navigate('/login'); }}><LogOut size={16}/>Sign out</button><button className="button button-ghost" onClick={() => setProfileOpen(false)}><X size={16}/>Close</button></div></Modal>}
   </div>;
 }

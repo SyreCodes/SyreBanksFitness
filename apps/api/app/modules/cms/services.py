@@ -25,7 +25,7 @@ DEFAULT_CONTENT: dict[str, Any] = {
     "hero_image_url": get_settings().public_web_url.rstrip("/") + "/images/training-illustration.jpg",
     "hero_image_caption": "Illustrative training photography · Luke Witter / Unsplash",
     "about_heading": "Discipline that carries into life.",
-    "about_bio": "Syre Banks Fitness brings structured training, consistent accountability and personal coaching together. Coach biography and qualifications will be added after verification.",
+    "about_bio": "Syre Banks Fitness brings structured training, consistent accountability and personal coaching together. Build a routine around your goals, your available time and the way you train.",
     "about_image_url": "", "coaching_philosophy": "Start where you are. Train with intention. Build habits that last.",
     "contact_email": "syrefitness6@gmail.com", "contact_phone": "0785430927",
     "instagram_url": "https://www.instagram.com/williamsyre2.0/", "tiktok_url": "https://www.tiktok.com/@mugabo.willy",
@@ -75,6 +75,12 @@ class CMSService:
 
     def public_content(self) -> dict:
         content = self.settings()
+        # Keep unfinished authoring prompts out of the public biography without changing stored content.
+        if any(marker in content.get('about_bio', '').lower() for marker in ('replace this', 'placeholder', 'add your ', 'your qualifications here')):
+            content['about_bio'] = DEFAULT_CONTENT['about_bio']
+        for key, value in list(content.items()):
+            if isinstance(value, str):
+                content[key] = value.replace('\\n', '\n')
         # API publication gates apply again when consent is withdrawn.
         content["transformations"] = [item for item in content.get("transformations", []) if item.get("consent_status") in {"GRANTED", "PUBLISHED"} and self.publication_consent(item.get("client_id"))]
         content["testimonials"] = [item for item in content.get("testimonials", []) if item.get("publication_consent") is True and self.publication_consent(item.get("client_id"))]
@@ -128,12 +134,11 @@ class CMSService:
     def media_output(self, asset: MediaAsset, user: User) -> dict:
         values = {key: value for key, value in serialize(asset).items()
                   if key not in {"storage_key", "upload_id", "upload_sha256"}}
-        if asset.public:
+        if asset.public and asset.purpose in {"marketing", "promotion"}:
             values["url"] = f"/api/v1/media/{asset.id}/file"
         else:
-            signed = storage_provider().signed_url(asset.storage_key)
             token = jwt.encode({"sub": user.id, "ver": user.token_version, "media_id": asset.id, "type": "media", "exp": datetime.now(UTC) + timedelta(minutes=5), "aud": "media", "iss": "syre-banks-fitness"}, get_settings().jwt_secret, algorithm="HS256")
-            values["url"] = signed or f"/api/v1/media/{asset.id}/file?token={token}"
+            values["url"] = f"/api/v1/media/{asset.id}/file?token={token}"
         return values
 
     def media(self, user: User, limit: int, offset: int) -> dict:
@@ -152,7 +157,7 @@ class CMSService:
             raise AppError(422, "INVALID_MEDIA", "Invalid media metadata")
         if public:
             require_admin(user)
-            if purpose not in {"marketing", "exercise"}:
+            if purpose != "marketing":
                 raise AppError(422, "PRIVATE_MEDIA_REQUIRED", "Client progress media must remain private")
         content, kind, extension = await read_validated_upload(file)
         if public and kind == "application/pdf":
@@ -164,11 +169,26 @@ class CMSService:
         return self.media_output(asset, user)
 
     def authorize_asset(self, asset: MediaAsset, user: User) -> None:
+        from app.modules.coaching.models import Exercise
+        from app.modules.commerce.entitlements import EntitlementService
+        from app.modules.commerce.models import DigitalAsset
+        exercise = self.db.scalar(select(Exercise).where(Exercise.video_media_id == asset.id))
+        if exercise:
+            EntitlementService(self.db).require_exercise(user, exercise)
+            return
+        digital = self.db.scalar(select(DigitalAsset).where(DigitalAsset.media_id == asset.id))
+        if digital and user.role not in ADMIN_ROLES:
+            if not digital.active or not EntitlementService(self.db).permits(user.id, 'digital_product', digital.product_id):
+                raise AppError(403, 'ENTITLEMENT_REQUIRED', 'This digital resource is not included in your access')
+            return
         if asset.owner_id != user.id and user.role not in ADMIN_ROLES:
             client_scope(self.db, user, asset.owner_id)
 
     def edit_media(self, media_id: str, caption: str | None, archive: bool, user: User) -> dict:
         asset = require_record(self.db, MediaAsset, media_id)
+        # Viewing an entitled file does not grant permission to change or archive it.
+        if asset.owner_id != user.id and user.role not in ADMIN_ROLES:
+            client_scope(self.db, user, asset.owner_id)
         self.authorize_asset(asset, user)
         if archive:
             asset.purpose, asset.public = "archived", False

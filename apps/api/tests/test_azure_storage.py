@@ -165,6 +165,9 @@ def test_publication_and_archive_take_effect_on_every_request(azure_media):
     client, db, asset, _, _, url, _, blob = azure_media
     asset.public = True
     db.commit()
+    assert client.get(url).status_code == 401  # A public flag alone must not publish private content.
+    asset.purpose = 'promotion'
+    db.commit()
     assert client.get(url).content == CONTENT
     asset.purpose = "archived"
     db.commit()

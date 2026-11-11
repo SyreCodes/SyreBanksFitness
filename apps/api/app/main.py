@@ -22,6 +22,7 @@ from app.modules.commerce.routes import router as commerce_router
 from app.modules.experience.routes import router as experience_router
 from app.modules.feedback.routes import router as feedback_router
 from app.modules.formchecks.routes import router as formchecks_router
+from app.modules.launch.routes import router as launch_router
 from app.modules.leads.routes import router as leads_router
 from app.modules.scheduling.routes import router as scheduling_router
 
@@ -29,7 +30,7 @@ configure_logging()
 settings = get_settings()
 app = FastAPI(lifespan=database_lifespan, title="Syre Banks Fitness API", version="0.1.0", description="Versioned fitness coaching API. Bearer authentication and server-side ownership permissions.")
 app.add_middleware(CORSMiddleware, allow_origins=settings.origins, allow_credentials=True,
-                   allow_methods=["GET", "HEAD", "POST", "PATCH", "DELETE"],
+                   allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
                    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "Idempotency-Key"],
                    expose_headers=["X-Request-ID"])
 install_errors(app)
@@ -71,6 +72,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(clients_router, prefix="/api/v1")
 
 app.include_router(leads_router, prefix="/api/v1")
+app.include_router(launch_router, prefix="/api/v1")
 
 app.include_router(coaching_router, prefix="/api/v1")
 

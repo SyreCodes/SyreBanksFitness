@@ -1,0 +1,11 @@
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { ThemeControl, ThemeSync, setTheme } from './Theme';
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+let dark = false;
+let changed: (() => void) | undefined;
+beforeEach(() => { localStorage.clear(); delete document.documentElement.dataset.themePreference; dark=false; changed=undefined; vi.stubGlobal('matchMedia',vi.fn(()=>({matches:dark,addEventListener:(_name:string,fn:()=>void)=>{changed=fn},removeEventListener:vi.fn()}))); });
+test('persists explicit choices and updates the root theme',()=>{render(<><ThemeSync/><ThemeControl/></>);fireEvent.change(screen.getByLabelText('Appearance'),{target:{value:'dark'}});expect(localStorage.getItem('syre-theme')).toBe('dark');expect(document.documentElement.dataset.theme).toBe('dark');fireEvent.change(screen.getByLabelText('Appearance'),{target:{value:'light'}});expect(document.documentElement.dataset.theme).toBe('light');});
+test('system follows changes without overwriting the stored preference',()=>{render(<><ThemeSync/><ThemeControl/></>);act(()=>{dark=true;changed?.()});expect(document.documentElement.dataset.theme).toBe('dark');act(()=>setTheme('light'));act(()=>{dark=false;changed?.();dark=true;changed?.()});expect(document.documentElement.dataset.theme).toBe('light');});
+test('storage changes in another tab update the selected theme',()=>{render(<><ThemeSync/><ThemeControl/></>);act(()=>setTheme('light'));act(()=>{localStorage.setItem('syre-theme','dark');window.dispatchEvent(new StorageEvent('storage',{key:'syre-theme',newValue:'dark'}));});expect(document.documentElement.dataset.theme).toBe('dark');expect(screen.getByLabelText('Appearance')).toHaveValue('dark');});
+test('blocked storage still permits a session theme',()=>{render(<><ThemeSync/><ThemeControl/></>);const save=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('Storage blocked')});act(()=>setTheme('dark'));expect(document.documentElement.dataset.theme).toBe('dark');save.mockRestore();});

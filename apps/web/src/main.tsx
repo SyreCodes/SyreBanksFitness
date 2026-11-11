@@ -6,6 +6,7 @@ import { AuthProvider } from './services/auth';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { App } from './app/App';
 import './styles.css';
+import './premium.css';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: false } } });
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><ErrorBoundary><QueryClientProvider client={queryClient}><BrowserRouter><AuthProvider><App /></AuthProvider></BrowserRouter></QueryClientProvider></ErrorBoundary></React.StrictMode>);

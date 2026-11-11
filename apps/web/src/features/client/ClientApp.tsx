@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ClientLoading } from './common'
 import './client.css'
+import { DiscoverPage, ProfilePage } from './MemberExtras'
 
 const DashboardPage = lazy(() => import('./dashboard').then(module => ({ default: module.DashboardPage })))
 const WorkoutsPage = lazy(() => import('./workouts').then(module => ({ default: module.WorkoutsPage })))
@@ -19,5 +20,5 @@ const FormChecksPage = lazy(() => import('./formchecks').then(module => ({ defau
 const FeedbackPage = lazy(() => import('./feedback').then(module => ({ default: module.FeedbackPage })))
 
 export function ClientApp() {
-  return <div className="client-portal"><Suspense fallback={<ClientLoading />}><Routes><Route index element={<DashboardPage />} /><Route path="workouts" element={<WorkoutsPage />} /><Route path="programs" element={<ProgramsPage />} /><Route path="progress" element={<ProgressPage />} /><Route path="nutrition" element={<NutritionPage />} /><Route path="habits" element={<HabitsPage />} /><Route path="checkins" element={<CheckinsPage />} /><Route path="messages" element={<MessagesPage />} /><Route path="bookings" element={<BookingsPage />} /><Route path="billing" element={<BillingPage />} /><Route path="onboarding" element={<OnboardingPage />} /><Route path="formchecks" element={<FormChecksPage />} /><Route path="feedback" element={<FeedbackPage />} /><Route path="*" element={<Navigate to="/app" replace />} /></Routes></Suspense></div>
+  return <div className="client-portal"><Suspense fallback={<ClientLoading />}><Routes><Route index element={<DashboardPage />} /><Route path="discover" element={<DiscoverPage />} /><Route path="profile" element={<ProfilePage />} /><Route path="workouts" element={<WorkoutsPage />} /><Route path="programs" element={<ProgramsPage />} /><Route path="progress" element={<ProgressPage />} /><Route path="nutrition" element={<NutritionPage />} /><Route path="habits" element={<HabitsPage />} /><Route path="checkins" element={<CheckinsPage />} /><Route path="messages" element={<MessagesPage />} /><Route path="bookings" element={<BookingsPage />} /><Route path="billing" element={<BillingPage />} /><Route path="onboarding" element={<OnboardingPage />} /><Route path="formchecks" element={<FormChecksPage />} /><Route path="feedback" element={<FeedbackPage />} /><Route path="*" element={<Navigate to="/app" replace />} /></Routes></Suspense></div>
 }

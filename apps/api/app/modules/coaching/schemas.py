@@ -14,6 +14,9 @@ class ExerciseCreate(BaseModel):
     description: str = Field(default="", max_length=5000)
     instructions: str = Field(default="", max_length=5000)
     coach_cues: list[str] = Field(default_factory=list, max_length=30)
+    variations: list[str] = Field(default_factory=list, max_length=12)
+    regressions: list[str] = Field(default_factory=list, max_length=12)
+    progressions: list[str] = Field(default_factory=list, max_length=12)
     media_url: HttpUrl | None = None
     published: bool = True
 
@@ -25,6 +28,7 @@ class WorkoutExercise(BaseModel):
     sets: int = Field(default=3, ge=1, le=20)
     reps: str = Field(default="8-12", max_length=30)
     rest_seconds: int = Field(default=90, ge=0, le=600)
+    weight_kg: float | None = Field(default=None, ge=0, le=1000)
     notes: str = Field(default="", max_length=2000)
 
 

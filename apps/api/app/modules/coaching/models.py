@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base, Record
@@ -20,9 +20,15 @@ class Exercise(Record, Base):
     published: Mapped[bool] = mapped_column(Boolean, default=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    categories: Mapped[list[str]] = mapped_column(JSON, default=list, server_default=text("'[]'"))
+    goal: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    variations: Mapped[list[str]] = mapped_column(JSON, default=list, server_default=text("'[]'"))
+    regressions: Mapped[list[str]] = mapped_column(JSON, default=list, server_default=text("'[]'"))
+    progressions: Mapped[list[str]] = mapped_column(JSON, default=list, server_default=text("'[]'"))
 
 
 class Program(Record, Base):
+    launch_details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
     __tablename__ = "programs"
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -33,6 +39,7 @@ class Program(Record, Base):
     published: Mapped[bool] = mapped_column(Boolean, default=False)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    translations: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
 
 
 class ProgramAssignment(Record, Base):

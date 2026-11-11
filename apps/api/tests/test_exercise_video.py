@@ -77,9 +77,9 @@ def test_service_video_lifecycle_and_permissions(db, actors):
     assert forbidden.value.status == 401
 
     published = service.patch_exercise(record["id"], ExerciseCreate(name="Squat", muscle_group="Legs"), users["owner"])
-    assert published["video_url"] == f"/api/v1/media/{asset.id}/file"
-    assert asset.public is True
-    assert file_download(asset.id, db, None, Request({"type": "http", "method": "GET", "headers": []})).path == root / asset.storage_key
+    assert published["video_url"].startswith(f"/api/v1/media/{asset.id}/file?token=")
+    assert asset.public is False
+    assert file_download(asset.id, db, users["owner"], Request({"type": "http", "method": "GET", "headers": []})).path == root / asset.storage_key
 
     replaced = asyncio.run(service.upload_exercise_video(record["id"], in_memory_upload(MP4 + b"new"), users["owner"]))
     assert replaced["video_media_id"] != asset.id and asset.purpose == "archived"
@@ -114,7 +114,7 @@ def test_service_video_policy_types_and_size(db, actors, monkeypatch):
     for content, content_type in ((WEBM, "video/webm"), (MOV, "video/quicktime")):
         item = asyncio.run(service.upload_exercise_video(record["id"], in_memory_upload(content, content_type), users["owner"]))
         assert db.get(MediaAsset, item["video_media_id"]).content_type == content_type
-        assert item["video_url"] == f"/api/v1/media/{item['video_media_id']}/file"
+        assert item["video_url"].startswith(f"/api/v1/media/{item['video_media_id']}/file?token=")
 
     previous_id = db.get(Exercise, record["id"]).video_media_id
     monkeypatch.setattr(get_settings(), "video_max_upload_mb", 1)
@@ -187,20 +187,22 @@ def test_published_video_upload_playback_and_permissions(client, db, actors):
     assert result.status_code == 200, result.text
     uploaded = result.json()
     assert uploaded["video_media_id"]
-    assert uploaded["video_url"] == f"/api/v1/media/{uploaded['video_media_id']}/file"
+    assert uploaded["video_url"].startswith(f"/api/v1/media/{uploaded['video_media_id']}/file?token=")
     assert uploaded["media_url"] is None
     asset = db.get(MediaAsset, uploaded["video_media_id"])
     assert asset.owner_id == users["owner"].id
-    assert asset.purpose == "exercise" and asset.public is True and asset.content_type == "video/mp4"
+    assert asset.purpose == "exercise" and asset.public is False and asset.content_type == "video/mp4"
     assert (root / asset.storage_key).read_bytes() == MP4
     assert client.get(uploaded["video_url"]).content == MP4
-    public = client.get("/api/v1/exercises").json()["items"]
-    assert public[0]["video_url"] == uploaded["video_url"]
+    assert client.get('/api/v1/exercises').status_code == 401
+    assert client.get('/api/v1/exercises', headers=headers['client']).status_code == 403
+    staff = client.get('/api/v1/exercises', headers=headers['owner']).json()['items']
+    assert staff[0]['video_media_id'] == uploaded['video_media_id']
     actions = [row.action for row in db.scalars(select(AuditLog)).all()]
     assert "media.uploaded" in actions and "exercise.video_uploaded" in actions
 
 
-def test_unpublished_video_stays_private_until_publication(client, db, actors):
+def test_exercise_video_remains_private_after_publication(client, db, actors):
     headers, users, _ = actors
     record, body = exercise(client, headers["owner"], published=False)
     response = upload(client, record["id"], headers["admin"])
@@ -210,18 +212,19 @@ def test_unpublished_video_stays_private_until_publication(client, db, actors):
     assert asset.owner_id == users["owner"].id and asset.public is False
     path = f"/api/v1/media/{asset.id}/file"
     assert client.get(path).status_code == 401
-    assert client.get(path, headers=headers["other"]).status_code == 404
+    assert client.get(path, headers=headers["other"]).status_code == 403
     assert client.get(item["video_url"]).content == MP4
-    assert client.get("/api/v1/exercises").json()["items"] == []
+    assert client.get("/api/v1/exercises").status_code == 401
     owner_item = client.get("/api/v1/exercises", headers=headers["owner"]).json()["items"][0]
     assert "?token=" in owner_item["video_url"]
 
     body["published"] = True
     published = client.patch(f"/api/v1/exercises/{record['id']}", json=body, headers=headers["owner"])
     assert published.status_code == 200, published.text
-    assert published.json()["video_url"] == path
-    assert asset.public is True
-    assert client.get(path).content == MP4
+    assert published.json()["video_url"].startswith(path + "?token=")
+    assert asset.public is False
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers=headers["owner"]).content == MP4
 
     body["published"] = False
     hidden = client.patch(f"/api/v1/exercises/{record['id']}", json=body, headers=headers["owner"])

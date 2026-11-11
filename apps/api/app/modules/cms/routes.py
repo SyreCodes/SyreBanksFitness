@@ -89,8 +89,10 @@ def file_download(media_id: str, db: DB, user: OptionalIdentity, request: Reques
     asset = require_record(db, MediaAsset, media_id)
     if asset.purpose == "archived":
         raise AppError(404, "MEDIA_NOT_FOUND", "Media is no longer available")
+    from app.modules.commerce.models import DigitalAsset
+    digital = db.scalar(select(DigitalAsset).where(DigitalAsset.media_id == asset.id))
     exercise = db.scalar(select(Exercise).where(Exercise.video_media_id == asset.id))
-    if not asset.public or (exercise is not None and not exercise.published):
+    if not asset.public or asset.purpose not in {"marketing", "promotion"} or exercise is not None or digital is not None:
         if token:
             try:
                 claims = jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"], audience="media", issuer="syre-banks-fitness", options={"require": ["sub", "exp", "media_id", "type", "ver"]})
@@ -108,7 +110,7 @@ def file_download(media_id: str, db: DB, user: OptionalIdentity, request: Reques
         return provider.response(asset.storage_key, asset.content_type, method=request.method,
                                  range_header=request.headers.get("range"), if_range=request.headers.get("if-range"))
     if isinstance(provider, LocalStorage):
-        return FileResponse(provider.path(asset.storage_key), media_type=asset.content_type, headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"})
+        return FileResponse(provider.path(asset.storage_key), media_type=asset.content_type, headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
     url = provider.signed_url(asset.storage_key)
     if url is None:
         raise AppError(503, "STORAGE_UNAVAILABLE", "Storage is unavailable")

@@ -50,8 +50,8 @@ def order(data: OrderInput, db: DB, user: Identity):
 @router.get("/payments/status")
 def payment_status():
     settings = get_settings()
-    available = bool(settings.flutterwave_secret_key and settings.flutterwave_webhook_secret)
-    return {"available": available, "provider": "flutterwave", "reason": "" if available else "Payment credentials are not configured"}
+    available = bool(settings.live_payments_enabled and settings.flutterwave_secret_key and settings.flutterwave_webhook_secret)
+    return {"available": available, "provider": "flutterwave", "reason": "" if available else "Online payments are not open during this enrollment launch"}
 
 
 @router.post("/payments/initialize")
@@ -63,11 +63,15 @@ def initialize(data: PaymentInitialize, db: DB, user: Identity):
 
 @router.post("/payments/verify")
 def verify(data: PaymentVerify, db: DB, user: Identity):
+    if not get_settings().live_payments_enabled:
+        raise AppError(503, "PAYMENT_DISABLED", "Payments are not available during the enrollment launch")
     return CommerceService(db).verify(data.order_id, data.transaction_id, user)
 
 
 @router.post("/payments/webhook")
 async def webhook(request: Request, db: DB):
+    if not get_settings().live_payments_enabled:
+        raise AppError(503, "PAYMENT_DISABLED", "Payments are not available during the enrollment launch")
     secret = get_settings().flutterwave_webhook_secret
     received = request.headers.get("verif-hash", "")
     if not secret or not received or not secrets.compare_digest(received, secret):

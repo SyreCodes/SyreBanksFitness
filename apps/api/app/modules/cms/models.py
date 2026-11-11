@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base, Record
@@ -22,6 +22,7 @@ class BlogPost(Record, Base):
     cover_url: Mapped[str | None] = mapped_column(String(1000))
     author_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    translations: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
 
 
 class MediaAsset(Record, Base):

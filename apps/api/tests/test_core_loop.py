@@ -110,7 +110,7 @@ def test_pending_order_cannot_activate_without_server_verification(client, db):
     initialize = client.post("/api/v1/payments/initialize", json={"order_id": order["id"]}, headers=headers)
     assert initialize.status_code == 503
     assert db.scalar(select(Subscription)) is None
-    assert client.post("/api/v1/payments/webhook", json={"data": {"id": 1}}).status_code == 401
+    assert client.post("/api/v1/payments/webhook", json={"data": {"id": 1}}).status_code == 503
     stored = db.get(Order, order["id"])
     bad = VerifiedPayment("1", stored.reference, 9999, "USD", True)
     import pytest

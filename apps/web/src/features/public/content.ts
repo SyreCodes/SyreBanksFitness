@@ -10,6 +10,11 @@ export type PublicContent = {
   about_image_url?: string;
   about_heading?: string;
   about_bio?: string;
+  fitness_journey?: string;
+  qualifications?: string;
+  training_methodology?: string;
+  why_we_coach?: string;
+  client_expectations?: string;
   coaching_philosophy?: string;
   contact_email?: string;
   contact_phone?: string;

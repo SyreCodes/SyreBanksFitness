@@ -20,6 +20,10 @@ class User(Record, Base):
     status: Mapped[str] = mapped_column(String(30), default="ONBOARDING")
     goal: Mapped[str] = mapped_column(String(200), default="")
     demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    locale: Mapped[str] = mapped_column(String(10), default="en", server_default="en")
+    country_code: Mapped[str] = mapped_column(String(2), default="", server_default="")
+    currency: Mapped[str] = mapped_column(String(3), default="", server_default="")
+    billing_country_code: Mapped[str] = mapped_column(String(2), default="", server_default="")
 
 
 class RefreshSession(Record, Base):
