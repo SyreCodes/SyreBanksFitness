@@ -49,6 +49,7 @@ describe('coaching application', () => {
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: 'Send application' }));
     expect(await screen.findByText(/Thanks, Aline/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 }).textContent).not.toContain('\\n');
     const call = apiMock.mock.calls.find(([path]) => path === '/leads');
     const body = JSON.parse(call?.[1]?.body as string);
     expect(body).toMatchObject({ name: 'Aline Example', age: 28, sleep_hours: 7.5, goal: 'Muscle building', training_days: ['Monday'], consent: true, consent_version: '2026-07', source: 'WEBSITE' });

@@ -12,7 +12,7 @@ import { CallToAction, FaqList, GoalCards, PricingCards } from './Sections';
 import { ExerciseDemonstration } from './ExerciseDemonstration';
 
 function PageIntro({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
-  return <section className="sb-page-intro"><div className="sb-container"><p className="sb-kicker">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div></section>;
+  return <section className="sb-page-intro"><div className="sb-container"><p className="sb-kicker">{eyebrow}</p><h1 className="preserve-lines">{cleanText(title)}</h1><p>{description}</p></div></section>;
 }
 
 export function AboutPage() {
