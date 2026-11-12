@@ -81,3 +81,5 @@ html .client-workout-hero{background:#202730;color:#FFFFFF;border-color:#35404C}
 html .command-card{--muted:#C3C9D1;background:#202730;color:#FFFFFF;border-color:#35404C}
 html .quick-actions a{background:var(--surface);border-color:var(--line);color:var(--ink)}
 html :is(.badge-warning,.avatar-orange){color:var(--warning);background:var(--surface-soft)}
+/* Theme colors switch together: fading only a background briefly loses contrast. */
+html :is(.sb-goal-card,.button,.sb-button,.client-button){transition:transform var(--transition),box-shadow var(--transition),border-color var(--transition)}
